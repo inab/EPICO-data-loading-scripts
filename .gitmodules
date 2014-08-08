@@ -1,0 +1,4 @@
+[submodule "model"]
+	path = model
+	url = https://github.com/inab/BLUEPRINT-DCC-model.git
+	branch = master
