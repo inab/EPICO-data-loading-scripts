@@ -5,6 +5,11 @@ In order to use BLUEPRINT DCC database loading scripts you have to clone
 the repository:
 
 	git clone --recurse-submodules https://github.com/inab/BLUEPRINT-dcc-loading-scripts.git
+	
+and the update to the latest changes is with:
+
+	git pull --recurse-submodules
+	git submodule update --recursive
 
 Then, you have to setup the project profile, either changing of copying [blueprint-setup.ini](blueprint-setup.ini) file.
 
