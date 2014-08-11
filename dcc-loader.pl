@@ -81,6 +81,7 @@ tie(%samples,'Tie::IxHash');
 
 # Cache for cell lines
 my %cellSpecimenTerm = ();
+my %cellPurifiedTerm = ();
 
 my $bpDataServer = undef;
 my $metadataPath = undef;
@@ -212,7 +213,23 @@ sub public_results_callback {
 		$p_IHECsample = parseIHECSample($bpDataServer,$metadataPath,$sample_id,$cachingDir)  unless(defined($p_IHECsample));
 		
 		my $purified_cell_type = undef;
-		$purified_cell_type = $1  if($purified_cell_type_uri =~ /(?:(?:obo)|(?:efo))\/([^\/]+)/);
+
+		my @purified_term_uris = split(/,/,$purified_cell_type_uri);
+		
+		foreach my $term_uri (@purified_term_uris) {
+			if($term_uri =~ /obo\/((?:(?:CLO)|(?:CL))_[^\/]+)/ || $term_uri =~ /efo\/([^\/]+)/) {
+				$purified_cell_type = $1;
+				last;
+			}
+		}
+		
+		# Last resort, look at the cache
+		if(defined($purified_cell_type)) {
+			$cellPurifiedTerm{$cell_line} = $purified_cell_type  if($cell_line ne '-' && !exists($cellPurifiedTerm{$cell_line}));
+		} elsif($cell_line ne '-' && exists($cellPurifiedTerm{$cell_line})) {
+			$purified_cell_type = $cellPurifiedTerm{$cell_line};
+		}
+		
 		my %sample = (
 			'sample_id'	=>	$sample_id,
 			'purified_cell_type'	=>	$purified_cell_type,
@@ -449,7 +466,7 @@ if(scalar(@ARGV)>=2) {
 					# sample
 					$mapper->setDestination($corrConcepts{'sample'});
 					
-					@bulkArray = values(%donors);
+					@bulkArray = values(%samples);
 					$destination = $mapper->getInternalDestination();
 					$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
 					$mapper->_bulkInsert($destination,$bulkData);
