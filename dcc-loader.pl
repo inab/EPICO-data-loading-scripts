@@ -99,9 +99,9 @@ sub parseIHECSample($$$$) {
 	
 	my $localIHECSample = cachedGet($bpDataServer,join('/',$metadataPath,substr($sample_id,0,6),$sample_id.'.xml'),$cachingDir);
 	
+	my %IHECsample = ();
 	if(defined($localIHECSample)) {
 		my $ihec = XML::LibXML::Reader->new(location=>$localIHECSample);
-		my %IHECsample = ();
 		
 		eval {
 			while($ihec->nextElement('SAMPLE_ATTRIBUTE')>0) {
@@ -117,11 +117,11 @@ sub parseIHECSample($$$$) {
 		};
 		
 		$ihec->close();
-		
-		return \%IHECsample;
 	} else {
-		Carp::croak("Unable to fetch metadata file about sample $sample_id");
+		Carp::carp("Unable to fetch metadata file about sample $sample_id");
 	}
+	
+	return \%IHECsample;
 }
 
 if(scalar(@ARGV)>=2) {
@@ -366,18 +366,104 @@ if(scalar(@ARGV)>=2) {
 			
 				# Several hacks in a row... Yuck!
 				if(!defined($modelDomain) || $modelDomain eq 'sdata') {
+					my $conceptDomain = $model->getConceptDomain('sdata');
+					my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash});
+					
+					my $destination = undef;
+					my $bulkData = undef;
+					my @bulkArray = ();
+					
+					# donor
+					$mapper->setDestination($corrConcepts{'donor'});
+					
+					@bulkArray = values(%donors);
+					$destination = $mapper->getInternalDestination();
+					$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+					$mapper->_bulkInsert($destination,$bulkData);
+					
+					$mapper->freeDestination();
+					@bulkArray = ();
+					$bulkData = undef;
+					$destination = undef;
+					
+					# specimen
+					$mapper->setDestination($corrConcepts{'specimen'});
+					
+					@bulkArray = values(%specimens);
+					$destination = $mapper->getInternalDestination();
+					$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+					$mapper->_bulkInsert($destination,$bulkData);
+					
+					$mapper->freeDestination();
+					@bulkArray = ();
+					$bulkData = undef;
+					$destination = undef;
+					
+					# sample
+					$mapper->setDestination($corrConcepts{'sample'});
+					
+					@bulkArray = values(%donors);
+					$destination = $mapper->getInternalDestination();
+					$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+					$mapper->_bulkInsert($destination,$bulkData);
+					
+					$mapper->freeDestination();
+					@bulkArray = ();
+					$bulkData = undef;
+					$destination = undef;
+					
 				}
 				
-				if(!defined($modelDomain) || $modelDomain eq 'pdna') {
-				}
-				
-				if(!defined($modelDomain) || $modelDomain eq 'rnaseq') {
-				}
-				
-				if(!defined($modelDomain) || $modelDomain eq 'dnase') {
-				}
-				
-				if(!defined($modelDomain) || $modelDomain eq 'meth') {
+				if(!defined($modelDomain) || $modelDomain ne 'sdata') {
+					my $labConceptDomain = $model->getConceptDomain('lab');
+					
+					if(!defined($modelDomain) || $modelDomain eq 'pdna') {
+						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{'cs'}));
+						
+						
+						
+						$mapper->freeDestination();
+						
+						my $conceptDomain = $model->getConceptDomain('pdna');
+						my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash})
+						
+					}
+					
+					if(!defined($modelDomain) || $modelDomain eq 'rnaseq') {
+						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{'mrna'}));
+						
+						
+						
+						$mapper->freeDestination();
+						
+						my $conceptDomain = $model->getConceptDomain('exp');
+						my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash})
+						
+					}
+					
+					if(!defined($modelDomain) || $modelDomain eq 'dnase') {
+						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{'chro'}));
+						
+						
+						
+						$mapper->freeDestination();
+						
+						my $conceptDomain = $model->getConceptDomain('rreg');
+						my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash})
+						
+					}
+					
+					if(!defined($modelDomain) || $modelDomain eq 'meth') {
+						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{'wgbs'}));
+						
+						
+						
+						$mapper->freeDestination();
+						
+						my $conceptDomain = $model->getConceptDomain('dlat');
+						my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash})
+						
+					}
 				}
 			}
 		}
