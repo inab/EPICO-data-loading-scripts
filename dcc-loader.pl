@@ -10,7 +10,7 @@ use Carp;
 use File::Basename;
 use File::Path;
 use File::Spec;
-use Net::FTP;
+use Net::FTP::AutoReconnect;
 #use Net::SFTP::Foreign 1.76;
 use Tie::IxHash;
 use XML::LibXML::Reader;
@@ -120,6 +120,7 @@ sub public_results_callback {
 	
 	unless(exists($donors{$donor_id})) {
 		$donor_ethnicity = undef  if($donor_ethnicity eq 'NA' || $donor_ethnicity eq '-');
+		
 		my $donor_region_of_residence_term = undef;
 		$donor_region_of_residence_term = 'ALIAS:EAL'  if($donor_region_of_residence eq "East Anglia");
 		
@@ -156,7 +157,7 @@ sub public_results_callback {
 		
 		my $specimen_term = undef;
 		
-		my @purified_term_uris = split(/,/,$purified_cell_type_uri);
+		my @purified_term_uris = split(/;/,$purified_cell_type_uri);
 		
 		foreach my $term_uri (@purified_term_uris) {
 			if($term_uri =~ /obo\/((?:(?:UBERON)|(?:CLO))_[^\/]+)/ || $term_uri =~ /efo\/([^\/]+)/) {
@@ -214,7 +215,7 @@ sub public_results_callback {
 		
 		my $purified_cell_type = undef;
 
-		my @purified_term_uris = split(/,/,$purified_cell_type_uri);
+		my @purified_term_uris = split(/;/,$purified_cell_type_uri);
 		
 		foreach my $term_uri (@purified_term_uris) {
 			if($term_uri =~ /obo\/((?:(?:CLO)|(?:CL))_[^\/]+)/ || $term_uri =~ /efo\/([^\/]+)/) {
@@ -262,8 +263,11 @@ sub cachedGet($$$) {
 	}
 	
 	unless($mirrored) {
+		$remotePath = '/'.$remotePath  unless(substr($remotePath,0,1) eq '/');
 		File::Path::make_path($localDir);
+		#print STDERR join(" -=- ",$remotePath,$cachingDir,$localPath,$localBasePath,$localRelDir,$localDir),"\n";
 		$localPath = $bpDataServer->get($remotePath,$localPath);
+		print STDERR "DEBUGFTP: ".$bpDataServer->message."\n"  unless(defined($localPath));
 		utime($filedate,$filedate,$localPath)  if(defined($localPath));
 	}
 	
@@ -273,21 +277,23 @@ sub cachedGet($$$) {
 sub parseIHECSample($$$$) {
 	my($bpDataServer,$metadataPath,$sample_id,$cachingDir) = @_;
 	
-	my $localIHECSample = cachedGet($bpDataServer,join('/',$metadataPath,substr($sample_id,0,6),$sample_id.'.xml'),$cachingDir);
+	my $localIHECSample = cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'),$cachingDir);
 	
 	my %IHECsample = ();
 	if(defined($localIHECSample)) {
 		my $ihec = XML::LibXML::Reader->new(location=>$localIHECSample);
 		
 		eval {
-			while($ihec->nextElement('SAMPLE_ATTRIBUTE')>0) {
-				if($ihec->nextElement('TAG')>0) {
-					my $tag = $ihec->value();
-					my $value = undef;
-					
-					$value = $ihec->value()  if($ihec->nextSiblingElement('VALUE')>0);
-					
-					$IHECsample{$tag} = $value;
+			if($ihec->nextElement('SAMPLE_ATTRIBUTES')) {
+				while($ihec->nextElement('SAMPLE_ATTRIBUTE')>0) {
+					if($ihec->nextElement('TAG')>0) {
+						my $tag = $ihec->readInnerXml();
+						my $value = undef;
+						
+						$value = $ihec->readInnerXml()  if($ihec->nextSiblingElement('VALUE')>0);
+						
+						$IHECsample{$tag} = $value;
+					}
 				}
 			}
 		};
@@ -363,7 +369,7 @@ if(scalar(@ARGV)>=2) {
 	# Defined outside
 	$bpDataServer = undef;
 	if($protocol eq 'ftp') {
-		$bpDataServer = Net::FTP->new($host,Debug=>0) || Carp::croak("FTP connection to server $host failed: ".$@);
+		$bpDataServer = Net::FTP::AutoReconnect->new($host,Debug=>0) || Carp::croak("FTP connection to server $host failed: ".$@);
 		$bpDataServer->login($user,$pass) || Carp::croak("FTP login to server $host failed: ".$bpDataServer->message());
 		$bpDataServer->binary();
 		
