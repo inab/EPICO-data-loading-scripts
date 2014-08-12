@@ -24,7 +24,10 @@ use TabParser;
 
 use constant DCC_LOADER_SECTION => 'dcc-loader';
 
-use constant PUBLIC_INDEX => 'public.results.index';
+use constant {
+	PUBLIC_INDEX	=>	'public.results.index',
+	EXPERIMENTS2DATASETS	=>	'experiments2datasets.txt'
+};
 
 use constant PUBLIC_INDEX_COLS => [
 	# sdata_donor
@@ -61,7 +64,14 @@ use constant PUBLIC_INDEX_COLS => [
 	# analyzed_sample_interval is unknown
 	# specimen_id is already derived from 'SAMPLE_ID'
 	
-	
+	# lab_*
+	'EXPERIMENT_ID',	# experiment_id
+	# analyzed_sample_id is already got from 'SAMPLE_ID'
+	# experiment_type is got from IHEC metadata (EXPERIMENT_TYPE)
+	# library_strategy is got from IHEC metadata (LIBRARY_STRATEGY)
+	'CENTER_NAME',	# it helps to get the experimental_group_id
+	'LIBRARY_STRATEGY',	# it helps to get the kind of experiment
+	'INSTRUMENT_MODEL',	# platform is derived from the contents of this column
 ];
 
 my %SEXCV = (
@@ -69,7 +79,34 @@ my %SEXCV = (
 	'Female'	=>	'f',
 );
 
+my %GROUPCV = (
+	'CNAG'	=>	['11'],
+	'NCMLS'	=>	['1'],
+	'NCMLS_CU'	=>	['1','3b'],
+	'MPIMG'	=>	['12d'],
+);
+
+my %EXPERIMENTCV = (
+	'Bisulfite-Seq'	=>	'wgbs',
+	'ChIP-Seq'	=>	'cs',
+	'DNase-Hypersensitivity'	=>	'chro',
+	'RNA-Seq'	=>	'mrna',
+);
+
+my %DOMAIN2EXPANAL = (
+	'pdna'	=>	['cs','pdna'],
+	'rnaseq'	=>	['mrna','exp'],
+	'dnase'	=>	['chro','rreg'],
+	'meth'	=>	['wgbs','dlat'],
+);
+
+my %INSTRUMENT2PLATFORM = (
+	'Illumina HiSeq 2000'	=>	60,
+);
+
+######
 # Shouldn't be global variables, but we need them in the different callbacks
+######
 my %donors = ();
 tie(%donors,'Tie::IxHash');
 
@@ -79,19 +116,41 @@ tie(%specimens,'Tie::IxHash');
 my %samples = ();
 tie(%samples,'Tie::IxHash');
 
+my %experiments = ();
+
+# Laboratory experiments and analysis metadata
+my %lab = ();
+my %anal = ();
+
+# Correspondence between experiment ids and EGA ids
+my %exp2EGA = ();
+
 # Cache for cell lines
 my %cellSpecimenTerm = ();
 my %cellPurifiedTerm = ();
 
+# Parameters needed
 my $bpDataServer = undef;
 my $metadataPath = undef;
 my $cachingDir = undef;
 
+#####
 # Method prototypes
+#####
 sub cachedGet($$$);
-sub parseIHECSample($$$$);
+sub parseIHECsample($$$$);
+sub parseIHECexperiment($$$$);
 
-# Method callbacks and methods
+#####
+# Method callbacks and method bodies
+#####
+
+sub experiments_to_datasets_callback {
+	my($experiment_id, $title, $dataset_id) = @_;
+
+	$exp2EGA{$experiment_id} = $dataset_id;
+}
+
 sub public_results_callback {
 	my(
 		$donor_id,
@@ -113,7 +172,12 @@ sub public_results_callback {
 		
 		$sample_id,
 		$purified_cell_type_uri,
-		$analyzed_sample_type_other
+		$analyzed_sample_type_other,
+		
+		$experiment_id,
+		$center_name,
+		$library_strategy,
+		$instrument_model,
 	)=@_;
 	
 	$donor_id = $cell_line  if($donor_id eq '-');
@@ -152,7 +216,7 @@ sub public_results_callback {
 			$donor_min_age_at_specimen_acquisition = 'P0Y';
 		}
 		
-		my $donor_disease = ($donor_disease_text eq 'None')? 'EFO_0000761': undef;
+		my $donor_disease = ($donor_disease_text eq 'None')? 'EFO:0000761': undef;
 		$donor_disease = $1  if($donor_disease_uri =~ /code=([^= ]+)/);
 		
 		my $specimen_term = undef;
@@ -160,21 +224,21 @@ sub public_results_callback {
 		my @purified_term_uris = split(/;/,$purified_cell_type_uri);
 		
 		foreach my $term_uri (@purified_term_uris) {
-			if($term_uri =~ /obo\/((?:(?:UBERON)|(?:CLO))_[^\/]+)/ || $term_uri =~ /efo\/([^\/]+)/) {
-				$specimen_term = $1;
+			if($term_uri =~ /obo\/(?:((?:UBERON)|(?:CLO))_([^\/]+))/ || $term_uri =~ /efo\/(EFO)_([^\/]+)/) {
+				$specimen_term = $1.':'.$2;
 				last;
 			}
 		}
 		
 		unless(defined($specimen_term)) {
 			if ($tissue_type eq "Peripheral blood"){
-				$specimen_term = "UBERON_0013756";
+				$specimen_term = "UBERON:0013756";
 			} elsif($tissue_type eq "Cord blood"){
-				$specimen_term = "UBERON_0012168";
+				$specimen_term = "UBERON:0012168";
 			} elsif($tissue_type eq "Tonsil"){
-				$specimen_term = "UBERON_0002372";
+				$specimen_term = "UBERON:0002372";
 			} elsif($tissue_type eq "Bone marrow"){
-				$specimen_term = "UBERON_0002371";
+				$specimen_term = "UBERON:0002371";
 			}
 		}
 		
@@ -185,7 +249,7 @@ sub public_results_callback {
 			$specimen_term = $cellSpecimenTerm{$cell_line};
 		}
 		
-		$p_IHECsample = parseIHECSample($bpDataServer,$metadataPath,$sample_id,$cachingDir);
+		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$cachingDir);
 		
 		my %specimen = (
 			'specimen_id'	=>	$specimen_id,
@@ -211,15 +275,15 @@ sub public_results_callback {
 	}
 	
 	unless(exists($samples{$sample_id})) {
-		$p_IHECsample = parseIHECSample($bpDataServer,$metadataPath,$sample_id,$cachingDir)  unless(defined($p_IHECsample));
+		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$cachingDir)  unless(defined($p_IHECsample));
 		
 		my $purified_cell_type = undef;
 
 		my @purified_term_uris = split(/;/,$purified_cell_type_uri);
 		
 		foreach my $term_uri (@purified_term_uris) {
-			if($term_uri =~ /obo\/((?:(?:CLO)|(?:CL))_[^\/]+)/ || $term_uri =~ /efo\/([^\/]+)/) {
-				$purified_cell_type = $1;
+			if($term_uri =~ /obo\/(?:((?:CLO)|(?:CL))_([^\/]+))/ || $term_uri =~ /efo\/(EFO)_([^\/]+)/) {
+				$purified_cell_type = $1.':'.$2;
 				last;
 			}
 		}
@@ -242,6 +306,45 @@ sub public_results_callback {
 			'specimen_id'	=>	$specimen_id,
 		);
 		$samples{$sample_id} = \%sample;
+	}
+	
+	if(exists($EXPERIMENTCV{$library_strategy})) {
+		# This is the experimental metadata
+		unless(exists($experiments{$experiment_id})) {
+			my $labexp = $EXPERIMENTCV{$library_strategy};
+			
+			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($bpDataServer,$metadataPath,$experiment_id,$cachingDir);
+			
+			my %features = map { $_ => { 'feature' => $_ , 'value' => $p_IHECexperiment->{$_}[0], 'units' => $p_IHECexperiment->{$_}[1] } } keys(%{$p_IHECexperiment});
+			
+			# The common attributes
+			my %experiment = (
+				'experiment_id'	=>	$experiment_id,
+				'analyzed_sample_id'	=>	$sample_id,
+				'experiment_type'	=>	exists($p_IHECexperiment->{EXPERIMENT_TYPE})?$p_IHECexperiment->{EXPERIMENT_TYPE}[0]:'',
+				'library_strategy'	=>	defined($ihec_library_strategy)?$ihec_library_strategy:$library_strategy,
+				'experimental_group_id'	=>	exists($GROUPCV{$center_name})?$GROUPCV{$center_name}:[$center_name],
+				'features'	=>	\%features,
+				'raw_data_repository'	=>	1,
+				'raw_data_accession'	=>	{
+									'accession'	=>	exists($exp2EGA{$experiment_id})?$exp2EGA{$experiment_id}:'',
+									'url'	=>	exists($exp2EGA{$experiment_id})?('https://www.ebi.ac.uk/ega/datasets/'.$exp2EGA{$experiment_id}):'',
+								},
+				'platform'	=>	exists($INSTRUMENT2PLATFORM{$instrument_model})?$INSTRUMENT2PLATFORM{$instrument_model}:-1,
+				'platform_model'	=>	$ihec_instrument_model,
+				'seq_coverage'	=>	undef,
+				'extraction_protocol'	=>	exists($p_IHECexperiment->{EXTRACTION_PROTOCOL})?$p_IHECexperiment->{EXTRACTION_PROTOCOL}[0]:undef,
+			);
+			
+			# Last, register it!
+			$lab{$labexp} = []  unless(exists($lab{$labexp}));
+			push(@{$lab{$labexp}},\%experiment);
+			$experiments{$experiment_id} = undef;
+		}
+		
+		# And this is the analysis metadata
+	} else {
+		Carp::carp("Unknown type of experiment: ".$library_strategy);
 	}
 }
 
@@ -274,14 +377,14 @@ sub cachedGet($$$) {
 	return $localPath;
 }
 
-sub parseIHECSample($$$$) {
+sub parseIHECsample($$$$) {
 	my($bpDataServer,$metadataPath,$sample_id,$cachingDir) = @_;
 	
-	my $localIHECSample = cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'),$cachingDir);
+	my $localIHECsample = cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'),$cachingDir);
 	
 	my %IHECsample = ();
-	if(defined($localIHECSample)) {
-		my $ihec = XML::LibXML::Reader->new(location=>$localIHECSample);
+	if(defined($localIHECsample)) {
+		my $ihec = XML::LibXML::Reader->new(location=>$localIHECsample);
 		
 		eval {
 			if($ihec->nextElement('SAMPLE_ATTRIBUTES')) {
@@ -306,11 +409,59 @@ sub parseIHECSample($$$$) {
 	return \%IHECsample;
 }
 
+sub parseIHECexperiment($$$$) {
+	my($bpDataServer,$metadataPath,$experiment_id,$cachingDir) = @_;
+	
+	my $localIHECexperiment = cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'),$cachingDir);
+	
+	my %IHECexperiment = ();
+	my $library_strategy = undef;
+	my $instrument_model = undef;
+	if(defined($localIHECexperiment)) {
+		my $pat = XML::LibXML::Pattern->new('//LIBRARY_STRATEGY | //PLATFORM//INSTRUMENT_MODEL | //EXPERIMENT_ATTRIBUTES');
+		my $patnext = XML::LibXML::Pattern->new('//PLATFORM//INSTRUMENT_MODEL | //EXPERIMENT_ATTRIBUTES');
+		my $ihec = XML::LibXML::Reader->new(location=>$localIHECexperiment);
+		
+		eval {
+			if($ihec->nextPatternMatch($pat)) {
+				if($ihec->localName() eq 'LIBRARY_STRATEGY') {
+					$library_strategy = $ihec->readInnerXml();
+				} elsif($ihec->localName() ne 'EXPERIMENT_ATTRIBUTES') {
+					$instrument_model = $ihec->readInnerXml()  if($ihec->localName() eq 'INSTRUMENT_MODEL' || ($ihec->nextPatternMatch($pat) && $ihec->localName() eq 'INSTRUMENT_MODEL'));
+				}
+				
+				if($ihec->localName() eq 'EXPERIMENT_ATTRIBUTES' || $ihec->nextElement('EXPERIMENT_ATTRIBUTES')) {
+					while($ihec->nextElement('EXPERIMENT_ATTRIBUTE')>0) {
+						if($ihec->nextElement('TAG')>0) {
+							my $tag = $ihec->readInnerXml();
+							my $value = undef;
+							my $units = undef;
+							
+							$value = $ihec->readInnerXml()  if($ihec->nextSiblingElement('VALUE')>0);
+							$units = $ihec->readInnerXml()  if($ihec->nextSiblingElement('UNITS')>0);
+							
+							$IHECexperiment{$tag} = [$value,$units];
+						}
+					}
+				}
+			}
+		};
+		
+		$ihec->close();
+	} else {
+		Carp::carp("Unable to fetch metadata file about experiment $experiment_id");
+	}
+	
+	return (\%IHECexperiment,$library_strategy,$instrument_model);
+}
+
 if(scalar(@ARGV)>=2) {
 	my $iniFile = shift(@ARGV);
 	# Defined outside
 	$cachingDir = shift(@ARGV);
 	my $modelDomain = shift(@ARGV);
+	
+	Carp::croak('ERROR: Unknown knowledge domain '.$modelDomain)  if(defined($modelDomain) && $modelDomain ne 'sdata' && !exists($DOMAIN2EXPANAL{$modelDomain}));
 	
 	# First, let's read the configuration
 	my $ini = Config::IniFiles->new(-file => $iniFile, -default => $BP::Loader::Mapper::DEFAULTSECTION);
@@ -383,8 +534,9 @@ if(scalar(@ARGV)>=2) {
 	}
 	
 	my $localIndexPath = cachedGet($bpDataServer,$indexPath.'/'.PUBLIC_INDEX,$cachingDir);
+	my $localExp2Datasets = cachedGet($bpDataServer,$indexPath.'/'.EXPERIMENTS2DATASETS,$cachingDir);
 	
-	if(defined($localIndexPath)) {
+	if(defined($localIndexPath) && defined($localExp2Datasets)) {
 		# Try getting a connection to 
 		
 		# Let's parse the model
@@ -403,6 +555,33 @@ if(scalar(@ARGV)>=2) {
 		}
 		print "\tDONE!\n";
 		
+			
+		# First, these correspondences experiment <=> EGA needed by next parse
+		if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
+			my %e2dConfig = (
+				TabParser::TAG_HAS_HEADER	=> 1,
+				TabParser::TAG_CALLBACK => \&experiments_to_datasets_callback,
+			);
+			TabParser::parseTab($E2D,%e2dConfig);
+			close($E2D);
+		} else {
+			Carp::croak("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
+		}
+		
+		# Now, let's parse the public.site.index, the backbone
+		if(open(my $PSI,'<:encoding(UTF-8)',$localIndexPath)) {
+			my %indexConfig = (
+				TabParser::TAG_HAS_HEADER	=> 1,
+				TabParser::TAG_FETCH_COLS => PUBLIC_INDEX_COLS,
+				TabParser::TAG_CALLBACK => \&public_results_callback,
+			);
+			TabParser::parseTab($PSI,%indexConfig);
+			close($PSI);
+		} else {
+			Carp::croak("Unable to parse $localIndexPath, the main metadata holder");
+		}
+
+
 		my %storageModels = ();
 		
 		# Setting up the loader storage model(s)
@@ -416,134 +595,127 @@ if(scalar(@ARGV)>=2) {
 				push(@loadModels,$loadModelName);
 			}
 		}
-		# Now, do we need to push the metadata there?
-		if(!$ini->exists($BP::Loader::Mapper::SECTION,'metadata-loaders') || $ini->val($BP::Loader::Mapper::SECTION,'metadata-loaders') eq 'true') {
-			foreach my $mapper (@storageModels{@loadModels}) {
+		
+		# For each data model
+		foreach my $loadModelName (@loadModels) {
+			print "Storing data using $loadModelName mapper\n";
+			my $mapper = $storageModels{$loadModelName};
+			
+			# Now, do we need to push the metadata there?
+			if(!$ini->exists($BP::Loader::Mapper::SECTION,'metadata-loaders') || $ini->val($BP::Loader::Mapper::SECTION,'metadata-loaders') eq 'true') {
 				$mapper->storeNativeModel();
 			}
-		}
-		
-		foreach my $mapper (@storageModels{@loadModels}) {
-			# First, let's parse the public.site.index, the backbone
-			if(open(my $PSI,'<',$localIndexPath)) {
-				my %config = (
-					TabParser::TAG_HAS_HEADER	=> 1,
-					TabParser::TAG_FETCH_COLS => PUBLIC_INDEX_COLS,
-					TabParser::TAG_CALLBACK => \&public_results_callback,
-				);
-				TabParser::parseTab($PSI,%config);
-				close($PSI);
 			
-				# Several hacks in a row... Yuck!
-				if(!defined($modelDomain) || $modelDomain eq 'sdata') {
-					my $conceptDomain = $model->getConceptDomain('sdata');
-					my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash});
-					
-					my $destination = undef;
-					my $bulkData = undef;
-					my @bulkArray = ();
-					
-					# donor
-					$mapper->setDestination($corrConcepts{'donor'});
-					
-					@bulkArray = values(%donors);
-					$destination = $mapper->getInternalDestination();
-					$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
-					$mapper->_bulkInsert($destination,$bulkData);
-					
-					$destination = undef;
-					$mapper->freeDestination();
-					@bulkArray = ();
-					$bulkData = undef;
-					
-					# specimen
-					$mapper->setDestination($corrConcepts{'specimen'});
-					
-					@bulkArray = values(%specimens);
-					$destination = $mapper->getInternalDestination();
-					$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
-					$mapper->_bulkInsert($destination,$bulkData);
-					
-					$destination = undef;
-					$mapper->freeDestination();
-					@bulkArray = ();
-					$bulkData = undef;
-					
-					# sample
-					$mapper->setDestination($corrConcepts{'sample'});
-					
-					@bulkArray = values(%samples);
-					$destination = $mapper->getInternalDestination();
-					$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
-					$mapper->_bulkInsert($destination,$bulkData);
-					
-					$destination = undef;
-					$mapper->freeDestination();
-					@bulkArray = ();
-					$bulkData = undef;
-					
-				}
+			# Several hacks in a row... Yuck!
+			if(!defined($modelDomain) || $modelDomain eq 'sdata') {
+				my $conceptDomain = $model->getConceptDomain('sdata');
+				print "Storing ",$conceptDomain->fullname,"\n";
+
+				my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash});
 				
-				if(!defined($modelDomain) || $modelDomain ne 'sdata') {
-					my $labConceptDomain = $model->getConceptDomain('lab');
+				my $destination = undef;
+				my $bulkData = undef;
+				my @bulkArray = ();
+				
+				# donor
+				$mapper->setDestination($corrConcepts{'donor'});
+				
+				@bulkArray = values(%donors);
+				$destination = $mapper->getInternalDestination();
+				$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+				$mapper->_bulkInsert($destination,$bulkData);
+				
+				$destination = undef;
+				$mapper->freeDestination();
+				@bulkArray = ();
+				$bulkData = undef;
+				
+				# specimen
+				$mapper->setDestination($corrConcepts{'specimen'});
+				
+				@bulkArray = values(%specimens);
+				$destination = $mapper->getInternalDestination();
+				$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+				$mapper->_bulkInsert($destination,$bulkData);
+				
+				$destination = undef;
+				$mapper->freeDestination();
+				@bulkArray = ();
+				$bulkData = undef;
+				
+				# sample
+				$mapper->setDestination($corrConcepts{'sample'});
+				
+				@bulkArray = values(%samples);
+				$destination = $mapper->getInternalDestination();
+				$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+				$mapper->_bulkInsert($destination,$bulkData);
+				
+				$destination = undef;
+				$mapper->freeDestination();
+				@bulkArray = ();
+				$bulkData = undef;
+				
+			}
+			
+			if(!defined($modelDomain) || $modelDomain ne 'sdata') {
+				my $labConceptDomain = $model->getConceptDomain('lab');
+				my $labFullname = $labConceptDomain->fullname;
+				
+				my @modelDomains = defined($modelDomain)?($DOMAIN2EXPANAL{$modelDomain}) : values(%DOMAIN2EXPANAL);
+				
+				foreach my $p_modelDomain (@modelDomains) {
+					my($expDomain,$analDomain) = @{$p_modelDomain};
 					
-					if(!defined($modelDomain) || $modelDomain eq 'pdna') {
-						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{'cs'}));
+					if(exists($lab{$expDomain})) {
+						my $destination = undef;
+						my $bulkData = undef;
+
+						print "Storing $labFullname\n\t* ",$labConceptDomain->conceptHash->{$expDomain}->fullname,"...\n";
+						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{$expDomain}));
+						$destination = $mapper->getInternalDestination();
+						$bulkData = $mapper->_bulkPrepare(undef,$lab{$expDomain});
+						$mapper->_bulkInsert($destination,$bulkData);
 						
-						
-						
+						$destination = undef;
 						$mapper->freeDestination();
+						$bulkData = undef;
 						
-						my $conceptDomain = $model->getConceptDomain('pdna');
-						my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash})
-						
+						if(exists($anal{$analDomain})) {
+							my $conceptDomain = $model->getConceptDomain($analDomain);
+							my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash});
+							
+							print "Storing ",$conceptDomain->fullname,"\n";
+							
+							if(exists($corrConcepts{'m'})) {
+								print "\t* ",$corrConcepts{'m'}->concept->fullname,"...\n";
+								$mapper->setDestination($corrConcepts{'m'});
+								$destination = $mapper->getInternalDestination();
+								$bulkData = $mapper->_bulkPrepare(undef,$anal{$analDomain});
+								$mapper->_bulkInsert($destination,$bulkData);
+								
+								$destination = undef;
+								$mapper->freeDestination();
+								$bulkData = undef;
+								
+								# And here the different bulk load
+							}
+						}
 					}
-					
-					if(!defined($modelDomain) || $modelDomain eq 'rnaseq') {
-						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{'mrna'}));
-						
-						
-						
-						$mapper->freeDestination();
-						
-						my $conceptDomain = $model->getConceptDomain('exp');
-						my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash})
-						
-					}
-					
-					if(!defined($modelDomain) || $modelDomain eq 'dnase') {
-						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{'chro'}));
-						
-						
-						
-						$mapper->freeDestination();
-						
-						my $conceptDomain = $model->getConceptDomain('rreg');
-						my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash})
-						
-					}
-					
-					if(!defined($modelDomain) || $modelDomain eq 'meth') {
-						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{'wgbs'}));
-						
-						
-						
-						$mapper->freeDestination();
-						
-						my $conceptDomain = $model->getConceptDomain('dlat');
-						my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash})
-						
-					}
+					print "Saliendo\n";
+					exit(1);
 				}
 			}
 		}
+	} elsif(!defined($localIndexPath)) {
+		Carp::croak("FATAL ERROR: Unable to fetch index from $indexPath (host $host)");
 	} else {
-		Carp::croak("FATAL ERROR: Unable to fetch index $indexPath from $host");
+		Carp::croak("FATAL ERROR: Unable to fetch experiments to datasets correspondence from $indexPath (host $host)");
 	}
 	
 	$bpDataServer->disconnect()  if($bpDataServer->can('disconnect'));
 	$bpDataServer->quit()  if($bpDataServer->can('quit'));
 	
 } else {
-	print STDERR "Usage: $0 iniFile cachingDir [sdata|pdna|rnaseq|dnase|meth]\n"
+	print STDERR "Usage: $0 iniFile cachingDir [",join('|','sdata',keys(%DOMAIN2EXPANAL)),"]\n"
 }
