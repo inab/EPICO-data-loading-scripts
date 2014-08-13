@@ -10,6 +10,7 @@ use Carp;
 use File::Basename;
 use File::Path;
 use File::Spec;
+use IO::Handle;
 use Net::FTP::AutoReconnect;
 #use Net::SFTP::Foreign 1.76;
 use Tie::IxHash;
@@ -903,6 +904,7 @@ sub rnaGFFQuantParser($$$) {
 				$feature, # feature
 				$chromosome_start,
 				$chromosome_end,
+				undef,
 				$chromosome_strand,
 				undef, # frame
 				$attributes_str, # attributes following .ace format
@@ -1208,6 +1210,8 @@ sub parseIHECexperiment($$$$) {
 }
 
 if(scalar(@ARGV)>=2) {
+	STDOUT->autoflush(1);
+	STDERR->autoflush(1);
 	my $iniFile = shift(@ARGV);
 	# Defined outside
 	$cachingDir = shift(@ARGV);
