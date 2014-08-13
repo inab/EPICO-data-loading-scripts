@@ -990,7 +990,7 @@ sub dsHotspotsBedParser($$$) {
 				'chromosome'	=>	$chromosome,
 				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
 				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
-				'log10_qvalue'	=>	defined($zscore_peak)?$zscore_peak:$zscore,
+				'z_score'	=>	defined($zscore_peak)?$zscore_peak:$zscore,
 			);
 			
 			push(@batch,\%entry);
