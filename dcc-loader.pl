@@ -119,14 +119,15 @@ my %INSTRUMENT2PLATFORM = (
 #	mapper: A BP::Loader::Mapper instance
 #####
 
-sub macsParser($$$);
+sub macsBedParser($$$);
 
-sub rnaGeneQuantParser($$$);
-sub rnaTranscriptQuantParser($$$);
+sub rnaGFFQuantParser($$$);
 
-sub dsHotspotsParser($$$);
+sub dsHotspotsBedParser($$$);
 
-sub dlatBedParser($$$);
+sub dlatBedHypoMParser($$$);
+sub dlatBedHyperMParser($$$);
+sub __dlatBedParser($$$$);
 
 
 
@@ -358,7 +359,7 @@ my %FILETYPE2ANAL = (
 		undef,
 		[['bed.gz' => 'cs_broad_peaks']],
 		'p',
-		\&macsParser,
+		\&macsBedParser,
 		CS_METADATA
 	],
 	
@@ -368,7 +369,7 @@ my %FILETYPE2ANAL = (
 		undef,
 		[['bed.gz' => 'cs_peaks']],
 		'p',
-		\&macsParser,
+		\&macsBedParser,
 		CS_METADATA
 	],
 	
@@ -388,7 +389,7 @@ my %FILETYPE2ANAL = (
 		undef,
 		[['.gff.gz' => 'gq_cbr']],
 		'g',
-		\&rnaGeneQuantParser,
+		\&rnaGFFQuantParser,
 		CBR_METADATA
 	],
 	
@@ -398,7 +399,7 @@ my %FILETYPE2ANAL = (
 		undef,
 		[['.gff' => 'gq_crg']],
 		'g',
-		\&rnaGeneQuantParser,
+		\&rnaGFFQuantParser,
 		CRG_METADATA
 	],
 	
@@ -408,7 +409,7 @@ my %FILETYPE2ANAL = (
 		undef,
 		[['.gff.gz' => 'tq_cbr']],
 		'g',
-		\&rnaTranscriptQuantParser,
+		\&rnaGFFQuantParser,
 		CBR_METADATA
 	],
 	
@@ -418,7 +419,7 @@ my %FILETYPE2ANAL = (
 		undef,
 		[['.gtf' => 'tq_crg']],
 		'g',
-		\&rnaTranscriptQuantParser,
+		\&rnaGFFQuantParser,
 		CRG_METADATA
 	],
 	
@@ -438,7 +439,7 @@ my %FILETYPE2ANAL = (
 		'ds_hotspots',
 		[['peaks' => 'ds_hotspots_peaks']],
 		'p',
-		\&dsHotspotsParser,
+		\&dsHotspotsBedParser,
 		DS_METADATA
 	],
 	
@@ -458,7 +459,7 @@ my %FILETYPE2ANAL = (
 		'bs_hyper',
 		undef,
 		'mr',
-		\&dlatBedParser,
+		\&dlatBedHyperMParser,
 		METH_HYPER_METADATA
 	],
 	
@@ -468,7 +469,7 @@ my %FILETYPE2ANAL = (
 		'bs_hypo',
 		undef,
 		'mr',
-		\&dlatBedParser,
+		\&dlatBedHypoMParser,
 		METH_HYPO_METADATA
 	],
 	
@@ -651,7 +652,6 @@ sub public_results_callback {
 		}
 		
 		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$cachingDir);
-		
 		my %specimen = (
 			'specimen_id'	=>	$specimen_id,
 			'tissue_type'	=>	$tissue_type,
@@ -814,44 +814,283 @@ sub public_results_callback {
 #	mapper: A BP::Loader::Mapper instance
 #####
 
-sub macsParser($$$) {
+sub macsBedParser($$$) {
 	my($F,$analysis_id,$mapper) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
+	# UGLY
+	my $BMAX = $mapper->{'batch-size'};
 	
-	# TODO
+	my $numBatch = 0;
+	my @batch = ();
+	
+	my %macsBedParserConfig = (
+		TabParser::TAG_CALLBACK => sub {
+			my(
+				$chro,
+				$chromosome_start,
+				$chromosome_end,
+				$protein_dna_interaction_id,
+				undef,
+				undef,
+				$fold_enrichment,	# fold_enrichment
+				$log10_pvalue, # -log10(pvalue)
+				$log10_qvalue, # -log10(qvalue)
+			) = @_;
+			
+			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
+			
+			$chromosome = 'MT'  if($chromosome eq 'M');
+			
+			my $protein_stable_id = ($protein_dna_interaction_id =~ /^[^.]+\.([^.]+)/)?$1:'';
+			
+			
+			my %entry = (
+				'analysis_id'	=>	$analysis_id,
+				'protein_dna_interaction_id'	=>	$protein_dna_interaction_id,
+				'chromosome'	=>	$chromosome,
+				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
+				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
+				'rank'	=>	[
+					{
+						'rank'	=>	'fold_enrichment',
+						'value'	=>	$fold_enrichment
+					}
+				],
+				'protein_stable_id'	=>	$protein_dna_interaction_id,
+				'log10_pvalue'	=>	$log10_pvalue,
+				'log10_qvalue'	=>	$log10_qvalue,
+			);
+			
+			push(@batch,\%entry);
+			$numBatch++;
+			
+			if($numBatch >= $BMAX) {
+				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				$mapper->_bulkInsert($destination,$bulkData);
+				
+				@batch = ();
+				$numBatch = 0;
+			}
+		},
+	);
+	TabParser::parseTab($F,%macsBedParserConfig);
+	
+	# Last step
+	if($numBatch > 0) {
+		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		$mapper->_bulkInsert($destination,$bulkData);
+		
+		@batch = ();
+	}
 }
 
-sub rnaGeneQuantParser($$$) {
+sub rnaGFFQuantParser($$$) {
 	my($F,$analysis_id,$mapper) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
+	# UGLY
+	my $BMAX = $mapper->{'batch-size'};
 	
-	# TODO
+	my $numBatch = 0;
+	my @batch = ();
+	
+	my %rnaGFFQuantParserConfig = (
+		TabParser::TAG_CALLBACK => sub {
+			my(
+				$chro,
+				undef, # source
+				$feature, # feature
+				$chromosome_start,
+				$chromosome_end,
+				$chromosome_strand,
+				undef, # frame
+				$attributes_str, # attributes following .ace format
+			) = @_;
+			
+			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
+			
+			$chromosome = 'MT'  if($chromosome eq 'M');
+			
+			my %attributes = ();
+			
+			my @tokens = split(/\s*;\s*/,$attributes_str);
+			foreach my $token (@tokens) {
+				my($key,$value) = split(/\s+/,$token,2);
+				
+				# Removing double quotes
+				$value =~ tr/"//d;
+				
+				$attributes{$key} = $value;
+			}
+			
+			
+			my %entry = (
+				'analysis_id'	=>	$analysis_id,
+				'chromosome'	=>	$chromosome,
+				'chromosome_start'	=>	$chromosome_start,
+				'chromosome_end'	=>	$chromosome_end,
+				'chromosome_strand'	=>	(($chromosome_strand eq '-')?-1:1),
+				'normalized_read_count'	=>	$attributes{'RPKM'},
+				'raw_read_count'	=>	int($attributes{'reads'} + 0.5),
+				'is_annotated'	=>	1,
+			);
+			$entry{'gene_stable_id'} = $attributes{'gene_id'}  if(exists($attributes{'gene_id'}));
+			$entry{'transcript_stable_id'} = $attributes{'transcript_id'}  if($feature eq 'transcript' && exists($attributes{'transcript_id'}));
+			
+			push(@batch,\%entry);
+			$numBatch++;
+			
+			if($numBatch >= $BMAX) {
+				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				$mapper->_bulkInsert($destination,$bulkData);
+				
+				@batch = ();
+				$numBatch = 0;
+			}
+		},
+	);
+	TabParser::parseTab($F,%rnaGFFQuantParserConfig);
+	
+	# Last step
+	if($numBatch > 0) {
+		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		$mapper->_bulkInsert($destination,$bulkData);
+		
+		@batch = ();
+	}
 }
 
-sub rnaTranscriptQuantParser($$$) {
+sub dsHotspotsBedParser($$$) {
 	my($F,$analysis_id,$mapper) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
+	# UGLY
+	my $BMAX = $mapper->{'batch-size'};
 	
-	# TODO
+	my $numBatch = 0;
+	my @batch = ();
+	
+	my %dsHotspotsBedParserConfig = (
+		TabParser::TAG_CALLBACK => sub {
+			my(
+				$chro,
+				$chromosome_start,
+				$chromosome_end,
+				$zscore,
+				$zscore_peak,
+			) = @_;
+			
+			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
+			
+			$chromosome = 'MT'  if($chromosome eq 'M');
+			
+			my %entry = (
+				'analysis_id'	=>	$analysis_id,
+				'chromosome'	=>	$chromosome,
+				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
+				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
+				'log10_qvalue'	=>	defined($zscore_peak)?$zscore_peak:$zscore,
+			);
+			
+			push(@batch,\%entry);
+			$numBatch++;
+			
+			if($numBatch >= $BMAX) {
+				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				$mapper->_bulkInsert($destination,$bulkData);
+				
+				@batch = ();
+				$numBatch = 0;
+			}
+		},
+	);
+	TabParser::parseTab($F,%dsHotspotsBedParserConfig);
+	
+	# Last step
+	if($numBatch > 0) {
+		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		$mapper->_bulkInsert($destination,$bulkData);
+		
+		@batch = ();
+	}
 }
 
-sub dsHotspotsParser($$$) {
-	my($F,$analysis_id,$mapper) = @_;
-	
-	my $destination = $mapper->getInternalDestination();
-	
-	# TODO
+sub dlatBedHyperMParser($$$) {
+	return __dlatBedParser($_[0],$_[1],$_[2],'hyper');
 }
 
-sub dlatBedParser($$$) {
-	my($F,$analysis_id,$mapper) = @_;
+sub dlatBedHypoMParser($$$) {
+	return __dlatBedParser($_[0],$_[1],$_[2],'hypo');
+}
+
+sub __dlatBedParser($$$$) {
+	my($F,$analysis_id,$mapper,$hyperhypo) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
+	# UGLY
+	my $BMAX = $mapper->{'batch-size'};
 	
-	# TODO
+	my $numBatch = 0;
+	my @batch = ();
+	
+	my %dlatBedParserConfig = (
+		TabParser::TAG_CALLBACK => sub {
+			my(
+				$chro,
+				$chromosome_start,
+				$chromosome_end,
+				undef,	# Size of region in base pairs
+				$avg_meth_level,	# Average methylation level in region
+				undef,	# Number of CpGs in region
+				$d_lated_reads,	# Median number of non-converted reads at CpGs in region
+				$converted_reads,	# Median number of converted reads at CpGs in region
+				$total_reads,	# Median number of total reads at CpGs in region
+				undef,	# Island/Shelf/Shore (union of CpG Island annotations for all CpGs in region)
+				undef,	# refGene annotation (union of refGene  annotations for all CpGs in region)
+			) = @_;
+			
+			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
+			
+			$chromosome = 'MT'  if($chromosome eq 'M');
+			
+			my $d_lated_fragment_id = $hyperhypo.'|'.$chro.'_'.$chromosome_start.'-'.$chromosome_end;
+			
+			
+			my %entry = (
+				'analysis_id'	=>	$analysis_id,
+				'd_lated_fragment_id'	=>	$d_lated_fragment_id,
+				'chromosome'	=>	$chromosome,
+				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
+				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
+				'total_reads'	=>	$total_reads,
+				'c_total_reads'	=>	($d_lated_reads + $converted_reads),
+				'd_lated_reads'	=>	$d_lated_reads,
+				'meth_level'	=>	$avg_meth_level
+				
+			);
+			
+			push(@batch,\%entry);
+			$numBatch++;
+			
+			if($numBatch >= $BMAX) {
+				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				$mapper->_bulkInsert($destination,$bulkData);
+				
+				@batch = ();
+				$numBatch = 0;
+			}
+		},
+	);
+	TabParser::parseTab($F,%dlatBedParserConfig);
+	
+	# Last step
+	if($numBatch > 0) {
+		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		$mapper->_bulkInsert($destination,$bulkData);
+		
+		@batch = ();
+	}
 }
 
 #####
