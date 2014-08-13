@@ -130,15 +130,7 @@ sub dsHotspotsParser($$$$$);
 
 sub dlatBedParser($$$$$);
 
-use constant {
-	F_DOMAIN	=>	0,
-	F_ANALYSIS_GROUP_ID	=>	1,
-	F_POSTFIX	=>	2,
-	F_PATTERN_POSTFIX	=>	3,
-	F_PRIMARY	=>	4,
-	F_PARSER	=>	5,
-	F_METADATA	=>	6,
-};
+
 
 use constant UNK_METADATA => {
 	'assembly_version'	=>	1,
@@ -346,6 +338,16 @@ use constant METH_HYPO_METADATA => {
 
 
 
+use constant {
+	F_DOMAIN	=>	0,
+	F_ANALYSIS_GROUP_ID	=>	1,
+	F_POSTFIX	=>	2,
+	F_PATTERN_POSTFIX	=>	3,
+	F_PRIMARY	=>	4,
+	F_PARSER	=>	5,
+	F_METADATA	=>	6,
+};
+
 
 # 0. The concept domain
 # 1. The group
@@ -355,8 +357,8 @@ my %FILETYPE2ANAL = (
 	'CS_BROAD_MACS2'	=>	[
 		'pdna',
 		['1'],
-		'cs_broad_peaks',
 		undef,
+		[['bed.gz' => 'cs_broad_peaks']],
 		'p',
 		\&macsParser,
 		CS_METADATA
@@ -365,8 +367,8 @@ my %FILETYPE2ANAL = (
 	'CS_MACS2'	=>	[
 		'pdna',
 		['1'],
-		'cs_peaks',
 		undef,
+		[['bed.gz' => 'cs_peaks']],
 		'p',
 		\&macsParser,
 		CS_METADATA
@@ -385,8 +387,8 @@ my %FILETYPE2ANAL = (
 	'RNA_GENE_QUANT_CBR'	=>	[
 		'exp',
 		['3b'],
-		'gq_cbr',
 		undef,
+		[['.gff.gz' => 'gq_cbr']],
 		'g',
 		\&rnaGeneQuantParser,
 		CBR_METADATA
@@ -395,8 +397,8 @@ my %FILETYPE2ANAL = (
 	'RNA_GENE_QUANT_CRG'	=>	[
 		'exp',
 		['15b'],
-		'gq_crg',
 		undef,
+		[['.gff' => 'gq_crg']],
 		'g',
 		\&rnaGeneQuantParser,
 		CRG_METADATA
@@ -405,8 +407,8 @@ my %FILETYPE2ANAL = (
 	'RNA_TRANSCRIPT_QUANT_CBR'	=>	[
 		'exp',
 		['3b'],
-		'tq_cbr',
 		undef,
+		[['.gff.gz' => 'tq_cbr']],
 		'g',
 		\&rnaTranscriptQuantParser,
 		CBR_METADATA
@@ -415,8 +417,8 @@ my %FILETYPE2ANAL = (
 	'RNA_TRANSCRIPT_QUANT_CRG'	=>	[
 		'exp',
 		['15b'],
-		'tq_crg',
 		undef,
+		[['.gtf' => 'tq_crg']],
 		'g',
 		\&rnaTranscriptQuantParser,
 		CRG_METADATA
@@ -436,7 +438,7 @@ my %FILETYPE2ANAL = (
 		'rreg',
 		['8'],
 		'ds_hotspots',
-		[['peaks','ds_hotspots_peaks']],
+		[['peaks' => 'ds_hotspots_peaks']],
 		'p',
 		\&dsHotspotsParser,
 		DS_METADATA
@@ -586,13 +588,13 @@ sub public_results_callback {
 	unless(exists($donors{$donor_id})) {
 		$donor_ethnicity = undef  if($donor_ethnicity eq 'NA' || $donor_ethnicity eq '-');
 		
-		my $donor_region_of_residence_term = undef;
+		my $donor_region_of_residence_term = '001';	# World
 		$donor_region_of_residence_term = 'ALIAS:EAL'  if($donor_region_of_residence eq "East Anglia");
 		
 		my %donor = (
 			'donor_id'	=>	$donor_id,
 			'donor_sex'	=>	exists($SEXCV{$donor_sex})?$SEXCV{$donor_sex}:undef,
-			'donor_region_of_residence'	=>	defined($donor_region_of_residence_term)?[$donor_region_of_residence_term]:undef,
+			'donor_region_of_residence'	=>	[$donor_region_of_residence_term],
 			'donor_ethnicity'	=>	$donor_ethnicity,
 			'notes'	=> ($cell_line ne '-')?'Cell line':undef,
 		);
@@ -753,7 +755,7 @@ sub public_results_callback {
 			
 			if(defined($ftype->[F_PATTERN_POSTFIX])) {
 				foreach my $p_pat_post (@{$ftype->[F_PATTERN_POSTFIX]}) {
-					my($pattern,$postfix)=@_;
+					my($pattern,$postfix)=@{$p_pat_post};
 					
 					if(index($remote_file_path,$pattern)!=-1) {
 						$an_postfix = $postfix;
@@ -764,36 +766,39 @@ sub public_results_callback {
 			
 			$an_postfix = $ftype->[F_POSTFIX]  unless(defined($an_postfix));
 			
-			my $analysis_id = $experiment_id.'_'.$an_postfix;
-			
-			unless(exists($reg_analysis{$analysis_id})) {
-				my $f_metadata = $ftype->[F_METADATA];
-				$f_metadata = {}  unless(defined($f_metadata));
+			# No postfix, no processing!!!!
+			if(defined($an_postfix)) {
+				my $analysis_id = $experiment_id.'_'.$an_postfix;
 				
-				my %analysis = (
-					'analysis_id'	=>	$analysis_id,
-					'experiment_id'	=>	$experiment_id,
-					'analysis_group_id'	=>	$ftype->[F_ANALYSIS_GROUP_ID],
-					'data_status'	=>	defined($ftype->[F_PRIMARY])?2:0,
-					'assembly_version'	=>	$f_metadata->{assembly_version},
-					'ensembl_version'	=>	$ensembl_version,
-					'gencode_version'	=>	$gencode_version,
-				);
-				$analysis{NSC} = $NSC  if($NSC ne '-');
-				$analysis{RSC} = $RSC  if($RSC ne '-');
-				@analysis{keys(%{$f_metadata})} = values(%{$f_metadata});
+				unless(exists($reg_analysis{$analysis_id})) {
+					my $f_metadata = $ftype->[F_METADATA];
+					$f_metadata = {}  unless(defined($f_metadata));
+					
+					my %analysis = (
+						'analysis_id'	=>	$analysis_id,
+						'experiment_id'	=>	$experiment_id,
+						'analysis_group_id'	=>	$ftype->[F_ANALYSIS_GROUP_ID],
+						'data_status'	=>	defined($ftype->[F_PRIMARY])?2:0,
+						'assembly_version'	=>	$f_metadata->{assembly_version},
+						'ensembl_version'	=>	$ensembl_version,
+						'gencode_version'	=>	$gencode_version,
+					);
+					$analysis{NSC} = $NSC  if($NSC ne '-');
+					$analysis{RSC} = $RSC  if($RSC ne '-');
+					@analysis{keys(%{$f_metadata})} = values(%{$f_metadata});
+					
+					# Last, register it!
+					$anal{$analDomain} = []  unless(exists($anal{$analDomain}));
+					push(@{$anal{$analDomain}},\%analysis);
+					$reg_analysis{$analysis_id} = undef;
+				}
 				
-				# Last, register it!
-				$anal{$analDomain} = []  unless(exists($anal{$analDomain}));
-				push(@{$anal{$analDomain}},\%analysis);
-				$reg_analysis{$analysis_id} = undef;
-			}
-			
-			# Preparing the field
-			if(defined($ftype->[F_PRIMARY])) {
-				$primary_anal{$analDomain} = []  unless(exists($primary_anal{$analDomain}));
-				
-				push(@{$primary_anal{$analDomain}},[$analysis_id,$ftype->[F_PRIMARY],$ftype->[F_PARSER],$remote_file_path]);
+				# Preparing the field
+				if(defined($ftype->[F_PRIMARY])) {
+					$primary_anal{$analDomain} = []  unless(exists($primary_anal{$analDomain}));
+					
+					push(@{$primary_anal{$analDomain}},[$analysis_id,$ftype->[F_PRIMARY],$ftype->[F_PARSER],$remote_file_path]);
+				}
 			}
 		}
 		
@@ -953,6 +958,8 @@ sub cachedGet($$$) {
 sub parseIHECsample($$$$) {
 	my($bpDataServer,$metadataPath,$sample_id,$cachingDir) = @_;
 	
+	print "\t* Parsing IHEC sample $sample_id...\n";
+	
 	my $localIHECsample = cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'),$cachingDir);
 	
 	my %IHECsample = ();
@@ -984,6 +991,8 @@ sub parseIHECsample($$$$) {
 
 sub parseIHECexperiment($$$$) {
 	my($bpDataServer,$metadataPath,$experiment_id,$cachingDir) = @_;
+	
+	print "\t* Parsing IHEC experiment $experiment_id...\n";
 	
 	my $localIHECexperiment = cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'),$cachingDir);
 	
@@ -1132,6 +1141,7 @@ if(scalar(@ARGV)>=2) {
 		
 			
 		# First, these correspondences experiment <=> EGA needed by next parse
+		print "Parsing ",EXPERIMENTS2DATASETS,"...\n";
 		if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
 			my %e2dConfig = (
 				TabParser::TAG_HAS_HEADER	=> 1,
@@ -1143,6 +1153,7 @@ if(scalar(@ARGV)>=2) {
 			Carp::croak("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
 		}
 		
+		print "Parsing ",PUBLIC_INDEX,"...\n";
 		# Now, let's parse the public.site.index, the backbone
 		if(open(my $PSI,'<:encoding(UTF-8)',$localIndexPath)) {
 			my %indexConfig = (
@@ -1178,6 +1189,7 @@ if(scalar(@ARGV)>=2) {
 			
 			# Now, do we need to push the metadata there?
 			if(!$ini->exists($BP::Loader::Mapper::SECTION,'metadata-loaders') || $ini->val($BP::Loader::Mapper::SECTION,'metadata-loaders') eq 'true') {
+				print "\t* Storing native model\n";
 				$mapper->storeNativeModel();
 			}
 			
@@ -1278,12 +1290,13 @@ if(scalar(@ARGV)>=2) {
 									if(exists($primary_anal{$analDomain})) {
 										foreach my $p_primary (@{$primary_anal{$analDomain}}) {
 											my($analysis_id,$conceptName,$method,$remote_file) = @{$p_primary};
-											print "\t* ",$corrConcepts{$conceptName}->concept->fullname,"...\n";
-											$mapper->setDestination($corrConcepts{$conceptName});
+											print "\t* ",$corrConcepts{$conceptName}->concept->fullname," ($remote_file)...\n";
 											
-											$method->($analysis_id,$mapper,$remote_file,$bpDataServer);
-											
-											$mapper->freeDestination();
+											#$mapper->setDestination($corrConcepts{$conceptName});
+											#
+											#$method->($analysis_id,$mapper,$remote_file,$bpDataServer);
+											#
+											#$mapper->freeDestination();
 										}
 									}
 								}
