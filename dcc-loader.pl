@@ -114,21 +114,19 @@ my %INSTRUMENT2PLATFORM = (
 # Parser methods
 # --------------
 # Each method must take these parameters
+#	F: A filehandler with the content
 #	analysis_id: The analysis_id for each entry
 #	mapper: A BP::Loader::Mapper instance
-#	p_files: A reference to an array of remote paths
-#	bpDataServer: Either a Net::FTP or Net::FTP::AutoReconnect instance
-#	cachingDir: The cache directory
 #####
 
-sub macsParser($$$$$);
+sub macsParser($$$);
 
-sub rnaGeneQuantParser($$$$$);
-sub rnaTranscriptQuantParser($$$$$);
+sub rnaGeneQuantParser($$$);
+sub rnaTranscriptQuantParser($$$);
 
-sub dsHotspotsParser($$$$$);
+sub dsHotspotsParser($$$);
 
-sub dlatBedParser($$$$$);
+sub dlatBedParser($$$);
 
 
 
@@ -811,116 +809,49 @@ sub public_results_callback {
 # Parser method bodies
 # --------------
 # Each method must take these parameters
+#	F: A filehandler with the content
 #	analysis_id: The analysis_id for each entry
 #	mapper: A BP::Loader::Mapper instance
-#	p_files: A reference to an array of remote paths
-#	bpDataServer: Either a Net::FTP or Net::FTP::AutoReconnect instance
-#	cachingDir: The cache directory
 #####
 
-sub macsParser($$$$$) {
-	my($analysis_id,$mapper,$p_files,$bpDataServer,$cachingDir) = @_;
+sub macsParser($$$) {
+	my($F,$analysis_id,$mapper) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
 	
-	$p_files = [ $p_files ]  unless(ref($p_files) eq 'ARRAY');
-	
-	foreach my $remote_file (@{$p_files}) {
-		my $local_file = cachedGet($bpDataServer,$remote_file,$cachingDir);
-		
-		if(defined($local_file)) {
-			# TODO
-			
-			# At the end, free space of downloaded file
-			unlink($local_file);
-		} else {
-			Carp::carp("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
-		}
-	}
+	# TODO
 }
 
-sub rnaGeneQuantParser($$$$$) {
-	my($analysis_id,$mapper,$p_files,$bpDataServer,$cachingDir) = @_;
+sub rnaGeneQuantParser($$$) {
+	my($F,$analysis_id,$mapper) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
 	
-	$p_files = [ $p_files ]  unless(ref($p_files) eq 'ARRAY');
-	
-	foreach my $remote_file (@{$p_files}) {
-		my $local_file = cachedGet($bpDataServer,$remote_file,$cachingDir);
-		
-		if(defined($local_file)) {
-			# TODO
-			
-			# At the end, free space of downloaded file
-			unlink($local_file);
-		} else {
-			Carp::carp("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
-		}
-	}
+	# TODO
 }
 
-sub rnaTranscriptQuantParser($$$$$) {
-	my($analysis_id,$mapper,$p_files,$bpDataServer,$cachingDir) = @_;
+sub rnaTranscriptQuantParser($$$) {
+	my($F,$analysis_id,$mapper) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
 	
-	$p_files = [ $p_files ]  unless(ref($p_files) eq 'ARRAY');
-	
-	foreach my $remote_file (@{$p_files}) {
-		my $local_file = cachedGet($bpDataServer,$remote_file,$cachingDir);
-		
-		if(defined($local_file)) {
-			# TODO
-			
-			# At the end, free space of downloaded file
-			unlink($local_file);
-		} else {
-			Carp::carp("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
-		}
-	}
+	# TODO
 }
 
-sub dsHotspotsParser($$$$$) {
-	my($analysis_id,$mapper,$p_files,$bpDataServer,$cachingDir) = @_;
+sub dsHotspotsParser($$$) {
+	my($F,$analysis_id,$mapper) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
 	
-	$p_files = [ $p_files ]  unless(ref($p_files) eq 'ARRAY');
-	
-	foreach my $remote_file (@{$p_files}) {
-		my $local_file = cachedGet($bpDataServer,$remote_file,$cachingDir);
-		
-		if(defined($local_file)) {
-			# TODO
-			
-			# At the end, free space of downloaded file
-			unlink($local_file);
-		} else {
-			Carp::carp("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
-		}
-	}
+	# TODO
 }
 
-sub dlatBedParser($$$$$) {
-	my($analysis_id,$mapper,$p_files,$bpDataServer,$cachingDir) = @_;
+sub dlatBedParser($$$) {
+	my($F,$analysis_id,$mapper) = @_;
 	
 	my $destination = $mapper->getInternalDestination();
 	
-	$p_files = [ $p_files ]  unless(ref($p_files) eq 'ARRAY');
-	
-	foreach my $remote_file (@{$p_files}) {
-		my $local_file = cachedGet($bpDataServer,$remote_file,$cachingDir);
-		
-		if(defined($local_file)) {
-			# TODO
-			
-			# At the end, free space of downloaded file
-			unlink($local_file);
-		} else {
-			Carp::carp("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
-		}
-	}
+	# TODO
 }
 
 #####
@@ -1292,11 +1223,45 @@ if(scalar(@ARGV)>=2) {
 											my($analysis_id,$conceptName,$method,$remote_file) = @{$p_primary};
 											print "\t* ",$corrConcepts{$conceptName}->concept->fullname," ($remote_file)...\n";
 											
-											#$mapper->setDestination($corrConcepts{$conceptName});
-											#
-											#$method->($analysis_id,$mapper,$remote_file,$bpDataServer);
-											#
-											#$mapper->freeDestination();
+											$mapper->setDestination($corrConcepts{$conceptName});
+											
+											my $p_remote_files = (ref($remote_file) eq 'ARRAY')?$remote_file:[$remote_file];
+											
+											foreach my $r_file (@{$p_remote_files}) {
+												my $local_file = cachedGet($bpDataServer,$r_file,$cachingDir);
+												
+												if(defined($local_file)) {
+													my $f_mode = undef;
+													my @f_params = ();
+													
+													# Compressed file detection
+													if($local_file =~ /\.gz$/) {
+														$f_mode = '-|';
+														push(@f_params,'gunzip','-c',$local_file);
+													} else {
+														$f_mode = '<';
+														push(@f_params,$local_file);
+													}
+													
+													if(open(my $F,$f_mode,@f_params)) {
+														eval {
+															$method->($F,$analysis_id,$mapper);
+														};
+														
+														if($@) {
+															Carp::carp("Errors while processing $remote_file: ".$@);
+														}
+														close($F);
+													}
+													
+													# At the end, free space of the huge downloaded file
+													unlink($local_file);
+												} else {
+													Carp::carp("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
+												}
+											}
+											
+											$mapper->freeDestination();
 										}
 									}
 								}
