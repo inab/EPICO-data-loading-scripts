@@ -41,7 +41,7 @@ use constant PUBLIC_INDEX_COLS => [
 	# sdata_specimen
 	# As we don't have an specimen_id, it will be derived from 'SAMPLE_ID'
 	'TISSUE_TYPE',	# tissue_type
-	'SAMPLE_DESC_1',	# tissue_depot
+	'SAMPLE_SOURCE',	# tissue_depot
 	# specimen_term is derived from TISSUE_TYPE
 	# collection_method comes from IHEC metadata (COLLECTION_METHOD)
 	'DONOR_AGE',	# donor_min_age_at_specimen_acquisition and donor_max_age_at_specimen_acquisition are extracted from this
@@ -51,7 +51,7 @@ use constant PUBLIC_INDEX_COLS => [
 	'SPECIMEN_PROCESSING',	# specimen_processing and specimen_processing_other
 	'SPECIMEN_STORAGE',	# specimen_storage and specimen_storage_other
 	'BIOMATERIAL_PROVIDER',	# specimen_biomaterial_provider
-	'SAMPLE_DESC_2',	# specimen_biomaterial_id ???
+	'SAMPLE_BARCODE',	# specimen_biomaterial_id ???
 	# specimen_available is unknown
 	# donor_id is already got from 'DONOR_ID'
 	
@@ -61,7 +61,7 @@ use constant PUBLIC_INDEX_COLS => [
 	# culture_conditions comes from IHEC metadata (CULTURE_CONDITIONS)
 	# markers comes from IHEC metadata (MARKERS)
 	# analyzed_sample_type must be set to 11 (other) to simplify
-	'SAMPLE_DESC_3',	# analyzed_sample_type_other
+	'SAMPLE_DESCRIPTION',	# analyzed_sample_type_other
 	# analyzed_sample_interval is unknown
 	# specimen_id is already derived from 'SAMPLE_ID'
 	
