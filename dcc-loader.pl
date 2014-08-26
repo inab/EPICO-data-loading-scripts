@@ -858,7 +858,7 @@ sub macsBedParser($$$) {
 						'value'	=>	$fold_enrichment
 					}
 				],
-				'protein_stable_id'	=>	$protein_dna_interaction_id,
+				'protein_stable_id'	=>	$protein_stable_id,
 				'log10_pvalue'	=>	$log10_pvalue,
 				'log10_qvalue'	=>	$log10_qvalue,
 			);
