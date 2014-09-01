@@ -20,13 +20,16 @@ use BP::Model;
 use BP::Loader::CorrelatableConcept;
 use BP::Loader::Mapper;
 use BP::Loader::Mapper::Relational;
+use BP::Loader::Mapper::ElasticSearch;
+use BP::Loader::Mapper::MongoDB;
 
 use TabParser;
 
 use constant DCC_LOADER_SECTION => 'dcc-loader';
 
 use constant {
-	PUBLIC_INDEX	=>	'public.results.index',
+#	PUBLIC_INDEX	=>	'public.results.index',
+	PUBLIC_INDEX	=>	'data_files.index',
 	EXPERIMENTS2DATASETS	=>	'experiments2datasets.txt'
 };
 
@@ -79,6 +82,7 @@ use constant PUBLIC_INDEX_COLS => [
 	'FILE',	# In some cases this one defines a variant in the analysis_id
 	'NSC',	# NSC
 	'RSC',	# RSC
+	#'WITHDRAWN',	# Has been withdrawn this analysis?
 ];
 
 my %SEXCV = (
@@ -129,6 +133,8 @@ sub dsHotspotsBedParser($$$);
 sub dlatBedHypoMParser($$$);
 sub dlatBedHyperMParser($$$);
 sub __dlatBedParser($$$$);
+
+sub dlatTxtCpGParser($$$);
 
 
 
@@ -299,10 +305,14 @@ use constant DS_METADATA => {
 use constant METH_CPG_METADATA => {
 	'assembly_version'	=>	1,
 	'program_versions'	=>	[
+		{
+			'program'	=>	'GEM',
+			'version'	=>	'1.242',
+		},
 	],
 	'alignment_algorithm'	=>	{
-		'name'	=>	'',
-		'url'	=>	'',
+		'name'	=>	'GEM',
+		'url'	=>	'http://big.crg.cat/services/gem_genome_multi_tool_library',
 	},
 	'other_analysis_algorithm'	=>	[
 	],
@@ -312,10 +322,14 @@ use constant METH_CPG_METADATA => {
 use constant METH_HYPER_METADATA => {
 	'assembly_version'	=>	1,
 	'program_versions'	=>	[
+		{
+			'program'	=>	'GEM',
+			'version'	=>	'1.242',
+		},
 	],
 	'alignment_algorithm'	=>	{
-		'name'	=>	'',
-		'url'	=>	'',
+		'name'	=>	'GEM',
+		'url'	=>	'http://big.crg.cat/services/gem_genome_multi_tool_library',
 	},
 	'other_analysis_algorithm'	=>	[
 	],
@@ -325,10 +339,14 @@ use constant METH_HYPER_METADATA => {
 use constant METH_HYPO_METADATA => {
 	'assembly_version'	=>	1,
 	'program_versions'	=>	[
+		{
+			'program'	=>	'GEM',
+			'version'	=>	'1.242',
+		},
 	],
 	'alignment_algorithm'	=>	{
-		'name'	=>	'',
-		'url'	=>	'',
+		'name'	=>	'GEM',
+		'url'	=>	'http://big.crg.cat/services/gem_genome_multi_tool_library',
 	},
 	'other_analysis_algorithm'	=>	[
 	],
@@ -346,8 +364,13 @@ use constant {
 	F_PRIMARY	=>	4,
 	F_PARSER	=>	5,
 	F_METADATA	=>	6,
+	F_PARENT_POSTFIX	=>	7,
 };
 
+use constant {
+	CNAG_CPGS_POSTFIX	=>	'bs_cpg',
+	CNAG_CYTOSINES_POSTFIX	=>	'bs_c'
+};
 
 # 0. The concept domain
 # 1. The group
@@ -361,7 +384,8 @@ my %FILETYPE2ANAL = (
 		[['bed.gz' => 'cs_broad_peaks']],
 		'p',
 		\&macsBedParser,
-		CS_METADATA
+		CS_METADATA,
+		undef
 	],
 	
 	'CS_MACS2'	=>	[
@@ -371,7 +395,8 @@ my %FILETYPE2ANAL = (
 		[['bed.gz' => 'cs_peaks']],
 		'p',
 		\&macsBedParser,
-		CS_METADATA
+		CS_METADATA,
+		undef
 	],
 	
 	'CS_WIGGLER'	=>	[
@@ -381,7 +406,8 @@ my %FILETYPE2ANAL = (
 		undef,
 		undef,
 		undef,
-		WIGGLER_METADATA
+		WIGGLER_METADATA,
+		undef
 	],
 	
 	'RNA_GENE_QUANT_CBR'	=>	[
@@ -391,7 +417,8 @@ my %FILETYPE2ANAL = (
 		[['.gff.gz' => 'gq_cbr']],
 		'g',
 		\&rnaGFFQuantParser,
-		CBR_METADATA
+		CBR_METADATA,
+		undef
 	],
 	
 	'RNA_GENE_QUANT_CRG'	=>	[
@@ -401,7 +428,8 @@ my %FILETYPE2ANAL = (
 		[['.gff' => 'gq_crg']],
 		'g',
 		\&rnaGFFQuantParser,
-		CRG_METADATA
+		CRG_METADATA,
+		undef
 	],
 	
 	'RNA_TRANSCRIPT_QUANT_CBR'	=>	[
@@ -411,7 +439,8 @@ my %FILETYPE2ANAL = (
 		[['.gff.gz' => 'tq_cbr']],
 		't',
 		\&rnaGFFQuantParser,
-		CBR_METADATA
+		CBR_METADATA,
+		undef
 	],
 	
 	'RNA_TRANSCRIPT_QUANT_CRG'	=>	[
@@ -421,7 +450,8 @@ my %FILETYPE2ANAL = (
 		[['.gtf' => 'tq_crg']],
 		't',
 		\&rnaGFFQuantParser,
-		CRG_METADATA
+		CRG_METADATA,
+		undef
 	],
 	
 	'RNA_JUNCTIONS_CRG'	=>	[
@@ -431,7 +461,8 @@ my %FILETYPE2ANAL = (
 		undef,
 		undef,
 		undef,
-		CRG_METADATA
+		CRG_METADATA,
+		undef
 	],
 	
 	'DS_HOTSPOT'	=>	[
@@ -441,7 +472,8 @@ my %FILETYPE2ANAL = (
 		[['peaks' => 'ds_hotspots_peaks']],
 		'p',
 		\&dsHotspotsBedParser,
-		DS_METADATA
+		DS_METADATA,
+		undef
 	],
 	
 	'DS_WIGGLER'	=>	[
@@ -451,7 +483,8 @@ my %FILETYPE2ANAL = (
 		undef,
 		undef,
 		undef,
-		WIGGLER_METADATA
+		WIGGLER_METADATA,
+		undef
 	],
 	
 	'BS_HYPER_METH_BED_CNAG'	=>	[
@@ -461,7 +494,8 @@ my %FILETYPE2ANAL = (
 		undef,
 		'mr',
 		\&dlatBedHyperMParser,
-		METH_HYPER_METADATA
+		METH_HYPER_METADATA,
+		CNAG_CPGS_POSTFIX
 	],
 	
 	'BS_HYPO_METH_BED_CNAG'	=>	[
@@ -471,17 +505,19 @@ my %FILETYPE2ANAL = (
 		undef,
 		'mr',
 		\&dlatBedHypoMParser,
-		METH_HYPO_METADATA
+		METH_HYPO_METADATA,
+		CNAG_CPGS_POSTFIX
 	],
 	
-	'BS_METH_CALL_CNAG'	=>	[
+	'BS_METH_TABLE_CYTOSINES_CNAG'	=>	[
 		'dlat',
 		['11'],
-		'bs_cpg',
 		undef,
-		undef,
-		undef,
-		METH_CPG_METADATA
+		[['cpgs.bs_call' => +CNAG_CPGS_POSTFIX]],
+		'mr',
+		\&dlatTxtCpGParser,
+		METH_CPG_METADATA,
+		undef	#CNAG_CYTOSINES_POSTFIX
 	],
 );
 
@@ -785,6 +821,9 @@ sub public_results_callback {
 					$analysis{NSC} = $NSC  if($NSC ne '-');
 					$analysis{RSC} = $RSC  if($RSC ne '-');
 					@analysis{keys(%{$f_metadata})} = values(%{$f_metadata});
+					if(defined($ftype->[F_PARENT_POSTFIX])) {
+						$analysis{'base_analysis_id'} = $analysis_id.'_'.$ftype->[F_PARENT_POSTFIX];
+					}
 					
 					# Last, register it!
 					$anal{$analDomain} = []  unless(exists($anal{$analDomain}));
@@ -1056,14 +1095,14 @@ sub __dlatBedParser($$$$) {
 			
 			$chromosome = 'MT'  if($chromosome eq 'M');
 			
-			my $d_lated_fragment_id = $hyperhypo.'|'.$chro.'_'.$chromosome_start.'-'.$chromosome_end;
-			
+			$chromosome_start = $chromosome_start+1;	# Bed holds the data 0-based
+			my $d_lated_fragment_id = $hyperhypo.'|'.$chro.'_'.$chromosome_start.'_'.$chromosome_end;
 			
 			my %entry = (
 				'analysis_id'	=>	$analysis_id,
 				'd_lated_fragment_id'	=>	$d_lated_fragment_id,
 				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
+				'chromosome_start'	=>	$chromosome_start,
 				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
 				'total_reads'	=>	$total_reads,
 				'c_total_reads'	=>	($d_lated_reads + $converted_reads),
@@ -1085,6 +1124,75 @@ sub __dlatBedParser($$$$) {
 		},
 	);
 	TabParser::parseTab($F,%dlatBedParserConfig);
+	
+	# Last step
+	if($numBatch > 0) {
+		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		$mapper->_bulkInsert($destination,$bulkData);
+		
+		@batch = ();
+	}
+}
+
+sub dlatTxtCpGParser($$$) {
+	my($F,$analysis_id,$mapper) = @_;
+	
+	my $destination = $mapper->getInternalDestination();
+	# UGLY
+	my $BMAX = $mapper->{'batch-size'};
+	
+	my $numBatch = 0;
+	my @batch = ();
+	
+	my %dlatTxtCpGParserConfig = (
+		TabParser::TAG_CALLBACK => sub {
+
+			my(
+				$chro,			# Chromosome
+				$chromosome_start,	# Position of CC (offset 1)
+				$probability,		# Phred scaled probability of genotype *not* being CC/GG
+				$avg_meth_level,	# Methylation probability (combined estimate from the weighted average of the MLEs at the two positions)
+				undef,			# Standard deviation of methylation probability (from weighted average)
+				$d_lated_reads,		# No. of non-converted C reads (sum of counts at both positions)
+				$converted_reads,	# No. of converted C reads (idem)
+				undef,			# Total reads supporting genotype call (idem)
+				$total_reads,		# Total reads (idem)
+			) = @_;
+			
+			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
+			
+			$chromosome = 'MT'  if($chromosome eq 'M');
+			
+			my $chromosome_end = $chromosome_start+1;	# As it is a CpG, it is one more
+			my $d_lated_fragment_id = 'cpg|'.$chro.'_'.$chromosome_start.'_'.$chromosome_end;
+			
+			
+			my %entry = (
+				'analysis_id'	=>	$analysis_id,
+				'd_lated_fragment_id'	=>	$d_lated_fragment_id,
+				'chromosome'	=>	$chromosome,
+				'chromosome_start'	=>	$chromosome_start,	# This txt had the coordinates 1-based
+				'chromosome_end'	=>	$chromosome_end,
+				'total_reads'	=>	$total_reads,
+				'c_total_reads'	=>	($d_lated_reads + $converted_reads),
+				'd_lated_reads'	=>	$d_lated_reads,
+				'meth_level'	=>	$avg_meth_level,
+				'probability'	=>	$probability
+			);
+			
+			push(@batch,\%entry);
+			$numBatch++;
+			
+			if($numBatch >= $BMAX) {
+				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				$mapper->_bulkInsert($destination,$bulkData);
+				
+				@batch = ();
+				$numBatch = 0;
+			}
+		},
+	);
+	TabParser::parseTab($F,%dlatTxtCpGParserConfig);
 	
 	# Last step
 	if($numBatch > 0) {
