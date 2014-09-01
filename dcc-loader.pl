@@ -906,7 +906,7 @@ sub macsBedParser($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				my $bulkData = $mapper->_bulkPrepare(\@batch);
 				$mapper->_bulkInsert($destination,$bulkData);
 				
 				@batch = ();
@@ -918,7 +918,7 @@ sub macsBedParser($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		my $bulkData = $mapper->_bulkPrepare(\@batch);
 		$mapper->_bulkInsert($destination,$bulkData);
 		
 		@batch = ();
@@ -983,7 +983,7 @@ sub rnaGFFQuantParser($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				my $bulkData = $mapper->_bulkPrepare(\@batch);
 				$mapper->_bulkInsert($destination,$bulkData);
 				
 				@batch = ();
@@ -995,7 +995,7 @@ sub rnaGFFQuantParser($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		my $bulkData = $mapper->_bulkPrepare(\@batch);
 		$mapper->_bulkInsert($destination,$bulkData);
 		
 		@batch = ();
@@ -1038,7 +1038,7 @@ sub dsHotspotsBedParser($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				my $bulkData = $mapper->_bulkPrepare(\@batch);
 				$mapper->_bulkInsert($destination,$bulkData);
 				
 				@batch = ();
@@ -1050,7 +1050,7 @@ sub dsHotspotsBedParser($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		my $bulkData = $mapper->_bulkPrepare(\@batch);
 		$mapper->_bulkInsert($destination,$bulkData);
 		
 		@batch = ();
@@ -1115,7 +1115,7 @@ sub __dlatBedParser($$$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				my $bulkData = $mapper->_bulkPrepare(\@batch);
 				$mapper->_bulkInsert($destination,$bulkData);
 				
 				@batch = ();
@@ -1127,7 +1127,7 @@ sub __dlatBedParser($$$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		my $bulkData = $mapper->_bulkPrepare(\@batch);
 		$mapper->_bulkInsert($destination,$bulkData);
 		
 		@batch = ();
@@ -1184,7 +1184,7 @@ sub dlatTxtCpGParser($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+				my $bulkData = $mapper->_bulkPrepare(\@batch);
 				$mapper->_bulkInsert($destination,$bulkData);
 				
 				@batch = ();
@@ -1196,7 +1196,7 @@ sub dlatTxtCpGParser($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $bulkData = $mapper->_bulkPrepare(undef,\@batch);
+		my $bulkData = $mapper->_bulkPrepare(\@batch);
 		$mapper->_bulkInsert($destination,$bulkData);
 		
 		@batch = ();
@@ -1491,7 +1491,7 @@ if(scalar(@ARGV)>=2) {
 				
 				@bulkArray = values(%donors);
 				$destination = $mapper->getInternalDestination();
-				$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+				$bulkData = $mapper->_bulkPrepare(\@bulkArray);
 				$mapper->_bulkInsert($destination,$bulkData);
 				
 				$destination = undef;
@@ -1504,7 +1504,7 @@ if(scalar(@ARGV)>=2) {
 				
 				@bulkArray = values(%specimens);
 				$destination = $mapper->getInternalDestination();
-				$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+				$bulkData = $mapper->_bulkPrepare(\@bulkArray);
 				$mapper->_bulkInsert($destination,$bulkData);
 				
 				$destination = undef;
@@ -1517,7 +1517,7 @@ if(scalar(@ARGV)>=2) {
 				
 				@bulkArray = values(%samples);
 				$destination = $mapper->getInternalDestination();
-				$bulkData = $mapper->_bulkPrepare(undef,\@bulkArray);
+				$bulkData = $mapper->_bulkPrepare(\@bulkArray);
 				$mapper->_bulkInsert($destination,$bulkData);
 				
 				$destination = undef;
@@ -1543,7 +1543,7 @@ if(scalar(@ARGV)>=2) {
 						print "Storing $labFullname\n\t* ",$labConceptDomain->conceptHash->{$expDomain}->fullname,"...\n";
 						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{$expDomain}));
 						$destination = $mapper->getInternalDestination();
-						$bulkData = $mapper->_bulkPrepare(undef,$lab{$expDomain});
+						$bulkData = $mapper->_bulkPrepare($lab{$expDomain});
 						$mapper->_bulkInsert($destination,$bulkData);
 						
 						$destination = undef;
@@ -1561,7 +1561,7 @@ if(scalar(@ARGV)>=2) {
 									print "\t* ",$corrConcepts{'m'}->concept->fullname,"...\n";
 									$mapper->setDestination($corrConcepts{'m'});
 									$destination = $mapper->getInternalDestination();
-									$bulkData = $mapper->_bulkPrepare(undef,$anal{$analDomain});
+									$bulkData = $mapper->_bulkPrepare($anal{$analDomain});
 									$mapper->_bulkInsert($destination,$bulkData);
 									
 									$destination = undef;
