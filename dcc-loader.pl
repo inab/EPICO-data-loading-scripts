@@ -20,7 +20,7 @@ use BP::Model;
 use BP::Loader::CorrelatableConcept;
 use BP::Loader::Mapper;
 use BP::Loader::Mapper::Relational;
-use BP::Loader::Mapper::ElasticSearch;
+use BP::Loader::Mapper::Elasticsearch;
 use BP::Loader::Mapper::MongoDB;
 
 use TabParser;
