@@ -409,7 +409,7 @@ my %FILETYPE2ANAL = (
 		['3b'],
 		undef,
 		[['.gff.gz' => 'tq_cbr']],
-		'g',
+		't',
 		\&rnaGFFQuantParser,
 		CBR_METADATA
 	],
@@ -419,7 +419,7 @@ my %FILETYPE2ANAL = (
 		['15b'],
 		undef,
 		[['.gtf' => 'tq_crg']],
-		'g',
+		't',
 		\&rnaGFFQuantParser,
 		CRG_METADATA
 	],
