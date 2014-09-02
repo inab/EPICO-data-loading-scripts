@@ -28,8 +28,8 @@ use TabParser;
 use constant DCC_LOADER_SECTION => 'dcc-loader';
 
 use constant {
-#	PUBLIC_INDEX	=>	'public.results.index',
-	PUBLIC_INDEX	=>	'data_files.index',
+	PUBLIC_INDEX	=>	'public.results.index',
+	DATA_FILES_INDEX	=>	'data_files.index',
 	EXPERIMENTS2DATASETS	=>	'experiments2datasets.txt'
 };
 
@@ -1430,8 +1430,21 @@ if(scalar(@ARGV)>=2) {
 			Carp::croak('ERROR: Model parsing and validation failed. Reason: '.$@);
 		}
 		print "\tDONE!\n";
+
+		my %storageModels = ();
 		
-			
+		# Setting up the loader storage model(s)
+		Carp::croak('ERROR: undefined destination storage model')  unless($ini->exists($BP::Loader::Mapper::SECTION,'loaders'));
+		my $loadModelNames = $ini->val($BP::Loader::Mapper::SECTION,'loaders');
+		
+		my @loadModels = ();
+		foreach my $loadModelName (split(/,/,$loadModelNames)) {
+			unless(exists($storageModels{$loadModelName})) {
+				$storageModels{$loadModelName} = BP::Loader::Mapper->newInstance($loadModelName,$model,$ini);
+				push(@loadModels,$loadModelName);
+			}
+		}
+		
 		# First, these correspondences experiment <=> EGA needed by next parse
 		print "Parsing ",EXPERIMENTS2DATASETS,"...\n";
 		if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
@@ -1459,20 +1472,6 @@ if(scalar(@ARGV)>=2) {
 			Carp::croak("Unable to parse $localIndexPath, the main metadata holder");
 		}
 
-
-		my %storageModels = ();
-		
-		# Setting up the loader storage model(s)
-		Carp::croak('ERROR: undefined destination storage model')  unless($ini->exists($BP::Loader::Mapper::SECTION,'loaders'));
-		my $loadModelNames = $ini->val($BP::Loader::Mapper::SECTION,'loaders');
-		
-		my @loadModels = ();
-		foreach my $loadModelName (split(/,/,$loadModelNames)) {
-			unless(exists($storageModels{$loadModelName})) {
-				$storageModels{$loadModelName} = BP::Loader::Mapper->newInstance($loadModelName,$model,$ini);
-				push(@loadModels,$loadModelName);
-			}
-		}
 		
 		# For each data model
 		foreach my $loadModelName (@loadModels) {
