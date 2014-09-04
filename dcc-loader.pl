@@ -514,7 +514,7 @@ my %FILETYPE2ANAL = (
 		['11'],
 		undef,
 		[['cpgs.bs_call' => +CNAG_CPGS_POSTFIX]],
-		'mr',
+		'cpg',
 		\&dlatTxtCpGParser,
 		METH_CPG_METADATA,
 		undef	#CNAG_CYTOSINES_POSTFIX
@@ -576,14 +576,111 @@ sub parseIHECexperiment($$$$);
 # Method callbacks
 #####
 
-sub experiments_to_datasets_callback {
-	my($experiment_id, $title, $dataset_id) = @_;
+sub experiments_to_datasets_callback(\%$$$) {
+	my($p_exp2EGA,$experiment_id, $title, $dataset_id) = @_;
 
-	$exp2EGA{$experiment_id} = $dataset_id;
+	$p_exp2EGA->{$experiment_id} = $dataset_id;
 }
 
 my $ensembl_version = undef;
 my $gencode_version = undef;
+
+sub data_files_callback {
+	my(
+		$donor_id,
+		$cell_line,
+		$donor_sex,
+		$donor_region_of_residence,
+		$donor_ethnicity,
+		
+		$tissue_type,
+		$tissue_depot,
+		$donor_age,
+		$donor_health_status,
+		$donor_disease_uri,
+		$donor_disease_text,
+		$specimen_processing,
+		$specimen_storage,
+		$specimen_biomaterial_provider,
+		$specimen_biomaterial_id,
+		
+		$sample_id,
+		$purified_cell_type_uri,
+		$analyzed_sample_type_other,
+		
+		$experiment_id,
+		$center_name,
+		$library_strategy,
+		$instrument_model,
+		
+		$file_type,
+		$remote_file_path,
+		$NSC,
+		$RSC,
+	)=@_;
+	
+	if(exists($experiments{$experiment_id})) {
+		# And this is the analysis metadata
+		if(exists($FILETYPE2ANAL{$file_type})) {
+			my $ftype = $FILETYPE2ANAL{$file_type};
+			my $analDomain = $ftype->[F_DOMAIN];
+			
+			# Analysis id building
+			my $an_postfix = undef;
+			
+			if(defined($ftype->[F_PATTERN_POSTFIX])) {
+				foreach my $p_pat_post (@{$ftype->[F_PATTERN_POSTFIX]}) {
+					my($pattern,$postfix)=@{$p_pat_post};
+					
+					if(index($remote_file_path,$pattern)!=-1) {
+						$an_postfix = $postfix;
+						last;
+					}
+				}
+			}
+			
+			$an_postfix = $ftype->[F_POSTFIX]  unless(defined($an_postfix));
+			
+			# No postfix, no processing!!!!
+			if(defined($an_postfix)) {
+				my $analysis_id = $experiment_id.'_'.$an_postfix;
+				
+				unless(exists($reg_analysis{$analysis_id})) {
+					my $f_metadata = $ftype->[F_METADATA];
+					$f_metadata = {}  unless(defined($f_metadata));
+					
+					my %analysis = (
+						'analysis_id'	=>	$analysis_id,
+						'experiment_id'	=>	$experiment_id,
+						'analysis_group_id'	=>	$ftype->[F_ANALYSIS_GROUP_ID],
+						'data_status'	=>	defined($ftype->[F_PRIMARY])?2:0,
+						'assembly_version'	=>	$f_metadata->{assembly_version},
+						'ensembl_version'	=>	$ensembl_version,
+						'gencode_version'	=>	$gencode_version,
+					);
+					$analysis{NSC} = $NSC  if($NSC ne '-');
+					$analysis{RSC} = $RSC  if($RSC ne '-');
+					@analysis{keys(%{$f_metadata})} = values(%{$f_metadata});
+					if(defined($ftype->[F_PARENT_POSTFIX])) {
+						$analysis{'base_analysis_id'} = $analysis_id.'_'.$ftype->[F_PARENT_POSTFIX];
+					}
+					
+					# Last, register it!
+					$anal{$analDomain} = []  unless(exists($anal{$analDomain}));
+					push(@{$anal{$analDomain}},\%analysis);
+					$reg_analysis{$analysis_id} = undef;
+				}
+				
+				# Preparing the field
+				if(defined($ftype->[F_PRIMARY])) {
+					$primary_anal{$analDomain} = []  unless(exists($primary_anal{$analDomain}));
+					
+					push(@{$primary_anal{$analDomain}},[$analysis_id,$ftype->[F_PRIMARY],$ftype->[F_PARSER],$remote_file_path]);
+				}
+			}
+		}
+	}
+}
 
 sub public_results_callback {
 	my(
@@ -780,65 +877,7 @@ sub public_results_callback {
 			$experiments{$experiment_id} = undef;
 		}
 		
-		# And this is the analysis metadata
-		if(exists($FILETYPE2ANAL{$file_type})) {
-			my $ftype = $FILETYPE2ANAL{$file_type};
-			my $analDomain = $ftype->[F_DOMAIN];
-			
-			# Analysis id building
-			my $an_postfix = undef;
-			
-			if(defined($ftype->[F_PATTERN_POSTFIX])) {
-				foreach my $p_pat_post (@{$ftype->[F_PATTERN_POSTFIX]}) {
-					my($pattern,$postfix)=@{$p_pat_post};
-					
-					if(index($remote_file_path,$pattern)!=-1) {
-						$an_postfix = $postfix;
-						last;
-					}
-				}
-			}
-			
-			$an_postfix = $ftype->[F_POSTFIX]  unless(defined($an_postfix));
-			
-			# No postfix, no processing!!!!
-			if(defined($an_postfix)) {
-				my $analysis_id = $experiment_id.'_'.$an_postfix;
-				
-				unless(exists($reg_analysis{$analysis_id})) {
-					my $f_metadata = $ftype->[F_METADATA];
-					$f_metadata = {}  unless(defined($f_metadata));
-					
-					my %analysis = (
-						'analysis_id'	=>	$analysis_id,
-						'experiment_id'	=>	$experiment_id,
-						'analysis_group_id'	=>	$ftype->[F_ANALYSIS_GROUP_ID],
-						'data_status'	=>	defined($ftype->[F_PRIMARY])?2:0,
-						'assembly_version'	=>	$f_metadata->{assembly_version},
-						'ensembl_version'	=>	$ensembl_version,
-						'gencode_version'	=>	$gencode_version,
-					);
-					$analysis{NSC} = $NSC  if($NSC ne '-');
-					$analysis{RSC} = $RSC  if($RSC ne '-');
-					@analysis{keys(%{$f_metadata})} = values(%{$f_metadata});
-					if(defined($ftype->[F_PARENT_POSTFIX])) {
-						$analysis{'base_analysis_id'} = $analysis_id.'_'.$ftype->[F_PARENT_POSTFIX];
-					}
-					
-					# Last, register it!
-					$anal{$analDomain} = []  unless(exists($anal{$analDomain}));
-					push(@{$anal{$analDomain}},\%analysis);
-					$reg_analysis{$analysis_id} = undef;
-				}
-				
-				# Preparing the field
-				if(defined($ftype->[F_PRIMARY])) {
-					$primary_anal{$analDomain} = []  unless(exists($primary_anal{$analDomain}));
-					
-					push(@{$primary_anal{$analDomain}},[$analysis_id,$ftype->[F_PRIMARY],$ftype->[F_PARSER],$remote_file_path]);
-				}
-			}
-		}
+		&data_files_callback(@_);
 		
 	} else {
 		Carp::carp("Unknown type of experiment: ".$library_strategy);
@@ -1177,10 +1216,10 @@ sub dlatTxtCpGParser($$$) {
 			
 			my %entry = (
 				'analysis_id'	=>	$analysis_id,
-				'd_lated_fragment_id'	=>	$d_lated_fragment_id,
+				#'d_lated_fragment_id'	=>	$d_lated_fragment_id,
 				'chromosome'	=>	$chromosome,
 				'chromosome_start'	=>	$chromosome_start,	# This txt had the coordinates 1-based
-				'chromosome_end'	=>	$chromosome_end,
+				#'chromosome_end'	=>	$chromosome_end,
 				'total_reads'	=>	$total_reads,
 				'c_total_reads'	=>	($d_lated_reads + $converted_reads),
 				'd_lated_reads'	=>	$d_lated_reads,
@@ -1408,6 +1447,7 @@ if(scalar(@ARGV)>=2) {
 	}
 	
 	my $localIndexPath = cachedGet($bpDataServer,$indexPath.'/'.PUBLIC_INDEX,$cachingDir);
+	my $localDataFilesIndexPath = cachedGet($bpDataServer,$indexPath.'/'.DATA_FILES_INDEX,$cachingDir);
 	my $localExp2Datasets = cachedGet($bpDataServer,$indexPath.'/'.EXPERIMENTS2DATASETS,$cachingDir);
 	
 	if(defined($localIndexPath) && defined($localExp2Datasets)) {
@@ -1450,6 +1490,7 @@ if(scalar(@ARGV)>=2) {
 		if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
 			my %e2dConfig = (
 				TabParser::TAG_HAS_HEADER	=> 1,
+				TabParser::TAG_CONTEXT	=> \%exp2EGA,
 				TabParser::TAG_CALLBACK => \&experiments_to_datasets_callback,
 			);
 			TabParser::parseTab($E2D,%e2dConfig);
@@ -1470,6 +1511,21 @@ if(scalar(@ARGV)>=2) {
 			close($PSI);
 		} else {
 			Carp::croak("Unable to parse $localIndexPath, the main metadata holder");
+		}
+
+		print "Parsing ",DATA_FILES_INDEX,"...\n";
+		# Now, let's parse the public.site.index, the backbone
+		if(open(my $DFI,'<:encoding(UTF-8)',$localDataFilesIndexPath)) {
+			my %indexConfig = (
+				TabParser::TAG_HAS_HEADER	=> 1,
+				TabParser::TAG_FETCH_COLS => PUBLIC_INDEX_COLS,
+				TabParser::TAG_POS_FILTER	=> [['FILE_TYPE' => 'BS_METH_TABLE_CYTOSINES_CNAG']],
+				TabParser::TAG_CALLBACK => \&data_files_callback,
+			);
+			TabParser::parseTab($DFI,%indexConfig);
+			close($DFI);
+		} else {
+			Carp::croak("Unable to parse $localDataFilesIndexPath, the accessory metadata holder");
 		}
 
 		
