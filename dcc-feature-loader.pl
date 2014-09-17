@@ -1,8 +1,11 @@
 #!/usr/bin/perl -w
 
+use v5.12;
+use warnings qw(all);
+no warnings qw(experimental);
 use strict;
-
 use diagnostics;
+
 use FindBin;
 use lib $FindBin::Bin."/model/schema+tools/lib";
 
