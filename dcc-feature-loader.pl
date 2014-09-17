@@ -2,7 +2,7 @@
 
 use strict;
 
-#use diagnostics;
+use diagnostics;
 use FindBin;
 use lib $FindBin::Bin."/model/schema+tools/lib";
 
@@ -84,30 +84,34 @@ sub parseSeqRegions($$$) {
 }
 
 sub parseENS($$$$$$$$) {
-	my($payload,$seq_region_id,$chromosome_start,$chromosome_end,$display_xref_id,$stable_id,$version,$description)=@_;
+	my($payload,$seq_region_id,$chromosome_start,$chromosome_end,$display_xref_id,$stable_id,$version,$description,$internal_id,$internal_gene_id)=@_;
 	
-	my($p_regionId,$p_ENShash,$p_ENSintHash,$feature) = @{$payload};
+	my($p_regionId,$p_ENShash,$p_ENSintHash,$p_geneMap) = @{$payload};
 	
 	if(exists($p_regionId->{$seq_region_id})) {
 		my $fullStableId = $stable_id.'.'.$version;
 		my @symbols = ($stable_id,$fullStableId);
-		push(@symbols,$description)  unless($description eq "\\N");
+		$description = undef  if($description eq "\\N");
 		
 		my $parsedData = undef;
 		if(exists($p_ENShash->{$stable_id})) {
 			$parsedData = $p_ENShash->{$stable_id};
 			push(@{$parsedData->{'symbol'}},@symbols);
 		} else {
+			my $feature_cluster_id = defined($internal_gene_id)?$p_geneMap->{$internal_gene_id}->{'feature_cluster_id'}:$fullStableId;
 			$parsedData = {
 				#$fullStableId,
+				'feature_cluster_id'	=> $feature_cluster_id,
 				'chromosome'	=> $p_regionId->{$seq_region_id},
 				'chromosome_start'	=> $chromosome_start,
 				'chromosome_end'	=> $chromosome_end,
 				'symbol'	=> \@symbols,
-				'feature'	=> $feature
+				'feature'	=> (defined($internal_gene_id)?'transcript':'gene')
 			};
 			$p_ENShash->{$stable_id} = $parsedData;
+			$p_geneMap->{$internal_id} = $parsedData  unless(defined($internal_gene_id));
 		}
+		$parsedData->{'description'} = $description  if(defined($description));
 		
 		$p_ENSintHash->{$display_xref_id} = $parsedData;
 	}
@@ -143,7 +147,7 @@ sub parseGTF(@) {
 		$attributes_str, # attributes following .ace format
 	) = @_;
 	
-	my($p_ENShash,$p_GencodeObjects) = @{$payload};
+	my($p_ENShash,$p_mappers) = @{$payload};
 	
 	my %attributes = ();
 	
@@ -159,6 +163,7 @@ sub parseGTF(@) {
 	}
 	
 	my $p_regionData = undef;
+	my $local = 1;
 	
 	my $ensIdKey = undef;
 	my $p_ensFeatures = undef;
@@ -173,28 +178,38 @@ sub parseGTF(@) {
 	my $fullEnsemblId = $attributes{$ensIdKey};
 	my $ensemblId = substr($fullEnsemblId,0,index($fullEnsemblId,'.'));
 		
-	unless($feature eq 'gene' || $feature eq 'transcript') {
-		$p_regionData = $p_ENShash->{$ensemblId}  if(exists($p_ENShash->{$ensemblId}));
+	if($feature eq 'gene' || $feature eq 'transcript') {
+		if(exists($p_ENShash->{$ensemblId})) {
+			$p_regionData = $p_ENShash->{$ensemblId};
+			$local = undef;
+		}
 	}
 	
-	unless(defined($p_regionData)) {
+	if($local) {
 		my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
 		
 		$chromosome = 'MT'  if($chromosome eq 'M');
 		
 		$p_regionData = {
 			#$fullEnsemblId,
+			'feature_cluster_id'	=> $attributes{'gene_id'},
 			'chromosome'	=> $chromosome,
 			'chromosome_start'	=> $chromosome_start,
 			'chromosome_end'	=> $chromosome_end,
 			'symbol'	=> [$fullEnsemblId,$ensemblId],
 			'feature'	=> $feature
 		};
-		push(@{$p_GencodeObjects},$p_regionData);
 	}
 	
 	foreach my $ensFeature (@{$p_ensFeatures}) {
 		push(@{$p_regionData->{symbol}},$attributes{$ensFeature})  if(exists($attributes{$ensFeature}));
+	}
+	
+	# Last, store it!!!
+	if($local) {
+		foreach my $mapper (@{$p_mappers}) {
+			$mapper->bulkInsert($p_regionData);
+		}
 	}
 	
 	1;
@@ -239,6 +254,52 @@ if(scalar(@ARGV)>=2) {
 		$gencode_gtf_file = $ini->val(DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG);
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".GENCODE_GTF_FILE_TAG."'");
+	}
+	
+	Carp::croak('ERROR: undefined destination storage model')  unless($ini->exists($BP::Loader::Mapper::SECTION,'loaders'));
+	
+	# Zeroth, load the data model
+	
+	# Let's parse the model
+	my $modelFile = $ini->val($BP::Loader::Mapper::SECTION,'model');
+	# Setting up the right path on relative cases
+	$modelFile = File::Spec->catfile(File::Basename::dirname($iniFile),$modelFile)  unless(File::Spec->file_name_is_absolute($modelFile));
+
+	print "Parsing model $modelFile...\n";
+	my $model = undef;
+	eval {
+		$model = BP::Model->new($modelFile);
+	};
+	
+	if($@) {
+		Carp::croak('ERROR: Model parsing and validation failed. Reason: '.$@);
+	}
+	print "\tDONE!\n";
+	
+	my %storageModels = ();
+	
+	# Setting up the loader storage model(s)
+	my $loadModelNames = $ini->val($BP::Loader::Mapper::SECTION,'loaders');
+	
+	my @loadModels = ();
+	foreach my $loadModelName (split(/,/,$loadModelNames)) {
+		unless(exists($storageModels{$loadModelName})) {
+			$storageModels{$loadModelName} = BP::Loader::Mapper->newInstance($loadModelName,$model,$ini);
+			push(@loadModels,$loadModelName);
+		}
+	}
+	
+	my $concept = $model->getConceptDomain('external')->conceptHash->{'gencode'};
+	my $corrConcept = BP::Loader::CorrelatableConcept->new($concept);
+	
+	my @mappers = @storageModels{@loadModels};
+	# Now, do we need to push the metadata there?
+	if(!$ini->exists($BP::Loader::Mapper::SECTION,'metadata-loaders') || $ini->val($BP::Loader::Mapper::SECTION,'metadata-loaders') eq 'true') {
+		foreach my $mapper (@mappers) {
+			$mapper->storeNativeModel();
+			
+			$mapper->setDestination($corrConcept);
+		}
 	}
 	
 	# First, explicitly create the caching directory
@@ -304,7 +365,7 @@ if(scalar(@ARGV)>=2) {
 			# The columns are 
 			#	seq_region_id
 			#	name
-			TabParser::TAG_FETCH_COLS => [1,2],
+			TabParser::TAG_FETCH_COLS => [0,1],
 		);
 		TabParser::parseTab($SEQREG,%config);
 		
@@ -313,10 +374,12 @@ if(scalar(@ARGV)>=2) {
 		print STDERR "ERROR: Unable to parse Sequence Regions file ".$localSeqRegion."\n";
 	}
 	
+	my %geneMap;
+	
 	print "Parsing ",$localGenes,"\n";
 	if(open(my $ENSG,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localGenes)) {
 		my %config = (
-			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,'gene'],
+			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap],
 			TabParser::TAG_CALLBACK => \&parseENS,
 			# The columns are 
 			#	seq_region_id
@@ -326,7 +389,8 @@ if(scalar(@ARGV)>=2) {
 			#	ensembl gene id
 			#	ensembl gene id version
 			#	description
-			TabParser::TAG_FETCH_COLS => [3,4,5,7,14,15,10],
+			#	internal gene id
+			TabParser::TAG_FETCH_COLS => [3,4,5,7,14,15,10,0],
 #			TabParser::TAG_NEG_FILTER => [[1 => 'LRG_gene']],
 		);
 		TabParser::parseTab($ENSG,%config);
@@ -339,7 +403,7 @@ if(scalar(@ARGV)>=2) {
 	print "Parsing ",$localTranscripts,"\n";
 	if(open(my $ENST,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localTranscripts)) {
 		my %config = (
-			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,'transcript'],
+			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap],
 			TabParser::TAG_CALLBACK => \&parseENS,
 			# The columns are 
 			#	seq_region_id
@@ -349,7 +413,9 @@ if(scalar(@ARGV)>=2) {
 			#	ensembl transcript id
 			#	ensembl transcript id version
 			#	description
-			TabParser::TAG_FETCH_COLS => [3,4,5,7,13,14,10],
+			#	internal transcript id
+			#	internal gene id
+			TabParser::TAG_FETCH_COLS => [3,4,5,7,13,14,10,0,1],
 #			TabParser::TAG_NEG_FILTER => [[8 => 'LRG_gene']],
 		);
 		TabParser::parseTab($ENST,%config);
@@ -358,7 +424,11 @@ if(scalar(@ARGV)>=2) {
 	} else {
 		print STDERR "ERROR: Unable to open EnsEMBL Transcripts file ".$localTranscripts."\n";
 	}
-
+	
+	# Freeing unused memory
+	%regionId = ();
+	%geneMap = ();
+	
 	print "Parsing ",$localXref,"\n";
 	if(open(my $XREF,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localXref)) {
 		my %config = (
@@ -377,15 +447,14 @@ if(scalar(@ARGV)>=2) {
 	} else {
 		print STDERR "ERROR: Unable to open EnsEMBL XREF file ".$localXref."\n";
 	}
-
-	
-	my @GencodeObjects = ();
+	# Freeing unused memory
+	%ENSintHash = ();
 	
 	print "Parsing ",$localGTF,"\n";
 	if(open(my $GTF,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localGTF)) {
 		my %config = (
 			TabParser::TAG_COMMENT	=>	'#',
-			TabParser::TAG_CONTEXT	=> [\%ENShash,\@GencodeObjects],
+			TabParser::TAG_CONTEXT	=> [\%ENShash,\@mappers],
 			TabParser::TAG_CALLBACK => \&parseGTF,
 		);
 		TabParser::parseTab($GTF,%config);
@@ -395,60 +464,9 @@ if(scalar(@ARGV)>=2) {
 		print STDERR "ERROR: Unable to open EnsEMBL XREF file ".$localGTF."\n";
 	}
 	
-	# Let's parse the model
-	my $modelFile = $ini->val($BP::Loader::Mapper::SECTION,'model');
-	# Setting up the right path on relative cases
-	$modelFile = File::Spec->catfile(File::Basename::dirname($iniFile),$modelFile)  unless(File::Spec->file_name_is_absolute($modelFile));
-
-	print "Parsing model $modelFile...\n";
-	my $model = undef;
-	eval {
-		$model = BP::Model->new($modelFile);
-	};
-	
-	if($@) {
-		Carp::croak('ERROR: Model parsing and validation failed. Reason: '.$@);
-	}
-	print "\tDONE!\n";
-	
-	my %storageModels = ();
-	
-	# Setting up the loader storage model(s)
-	Carp::croak('ERROR: undefined destination storage model')  unless($ini->exists($BP::Loader::Mapper::SECTION,'loaders'));
-	my $loadModelNames = $ini->val($BP::Loader::Mapper::SECTION,'loaders');
-	
-	my @loadModels = ();
-	foreach my $loadModelName (split(/,/,$loadModelNames)) {
-		unless(exists($storageModels{$loadModelName})) {
-			$storageModels{$loadModelName} = BP::Loader::Mapper->newInstance($loadModelName,$model,$ini);
-			push(@loadModels,$loadModelName);
-		}
-	}
-	# Now, do we need to push the metadata there?
-	if(!$ini->exists($BP::Loader::Mapper::SECTION,'metadata-loaders') || $ini->val($BP::Loader::Mapper::SECTION,'metadata-loaders') eq 'true') {
-		foreach my $mapper (@storageModels{@loadModels}) {
-			$mapper->storeNativeModel();
-		}
-	}
-	
-	my $concept = $model->getConceptDomain('external')->conceptHash->{'gencode'};
-	my $corrConcept = BP::Loader::CorrelatableConcept->new($concept);
-	
-	# Storage of the data
-	foreach my $mapper (@storageModels{@loadModels}) {
-		$mapper->setDestination($corrConcept);
-		
-		my $destination = $mapper->getInternalDestination();
-		
-		my $entorp = $mapper->validateAndEnactEntry(values(%ENShash),@GencodeObjects);
-		use Data::Dumper;
-		
-		my $bulkData = $mapper->_bulkPrepare($entorp);
-		$mapper->_bulkInsert($destination,$bulkData);
-		
-		$bulkData = undef;
-		$entorp = undef;
-		$destination = undef;
+	# Storing the final data
+	foreach my $mapper (@mappers) {
+		$mapper->bulkInsert(values(%ENShash));
 		$mapper->freeDestination();
 	}
 } else {
