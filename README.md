@@ -17,5 +17,5 @@ Then, you have to setup the project profile, either changing of copying [bluepri
   parameter from **relational** section, subtypes *postgresql*, *mysql* or *sqlite3*), *mongodb* and *elasticsearch* (these last ones have their own dedicated sections).
   On the dedicated section, uncomment and fill in only the parameters you need.
 
-* You also have to setup the connection parameters _**host**_, _**user**_ and _**pass**_ to BLUEPRINT data repository on **dcc-loader** section.
+* You also have to setup the connection parameters _**host**_, _**index-path**_, _**user**_ and _**pass**_ to BLUEPRINT data repository on **dcc-loader** section.
 
