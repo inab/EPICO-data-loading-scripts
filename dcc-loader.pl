@@ -44,7 +44,7 @@ use constant PUBLIC_INDEX_COLS => [
 	# sdata_specimen
 	# As we don't have an specimen_id, it will be derived from 'SAMPLE_ID'
 	'TISSUE_TYPE',	# tissue_type
-	'SAMPLE_SOURCE',	# tissue_depot
+	'TISSUE_DEPOT',	# tissue_depot
 	# specimen_term is derived from TISSUE_TYPE
 	# collection_method comes from IHEC metadata (COLLECTION_METHOD)
 	'DONOR_AGE',	# donor_min_age_at_specimen_acquisition and donor_max_age_at_specimen_acquisition are extracted from this
@@ -54,7 +54,7 @@ use constant PUBLIC_INDEX_COLS => [
 	'SPECIMEN_PROCESSING',	# specimen_processing and specimen_processing_other
 	'SPECIMEN_STORAGE',	# specimen_storage and specimen_storage_other
 	'BIOMATERIAL_PROVIDER',	# specimen_biomaterial_provider
-	'SAMPLE_BARCODE',	# specimen_biomaterial_id ???
+	'SAMPLE_DESC_2',	# specimen_biomaterial_id ???
 	# specimen_available is unknown
 	# donor_id is already got from 'DONOR_ID'
 	
@@ -64,7 +64,7 @@ use constant PUBLIC_INDEX_COLS => [
 	# culture_conditions comes from IHEC metadata (CULTURE_CONDITIONS)
 	# markers comes from IHEC metadata (MARKERS)
 	# analyzed_sample_type must be set to 11 (other) to simplify
-	'SAMPLE_DESCRIPTION',	# analyzed_sample_type_other
+	'SAMPLE_DESC_3',	# analyzed_sample_type_other
 	# analyzed_sample_interval is unknown
 	# specimen_id is already derived from 'SAMPLE_ID'
 	
@@ -752,8 +752,7 @@ sub public_results_callback {
 			$donor_min_age_at_specimen_acquisition = 'P0Y';
 		}
 		
-		my $donor_disease = ($donor_disease_text eq 'None')? 'EFO:0000761': undef;
-		$donor_disease = $1  if($donor_disease_uri =~ /code=([^= ]+)/);
+		my $donor_disease = ($donor_disease_text eq 'None')? 'http://www.ebi.ac.uk/efo/EFO_0000761': undef;
 		
 		my $specimen_term = undef;
 		
@@ -761,20 +760,20 @@ sub public_results_callback {
 		
 		foreach my $term_uri (@purified_term_uris) {
 			if($term_uri =~ /obo\/(?:((?:UBERON)|(?:CLO))_([^\/]+))/ || $term_uri =~ /efo\/(EFO)_([^\/]+)/) {
-				$specimen_term = $1.':'.$2;
+				$specimen_term = $term_uri;
 				last;
 			}
 		}
 		
 		unless(defined($specimen_term)) {
 			if ($tissue_type eq "Peripheral blood"){
-				$specimen_term = "UBERON:0013756";
+				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0013756";
 			} elsif($tissue_type eq "Cord blood"){
-				$specimen_term = "UBERON:0012168";
+				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0012168";
 			} elsif($tissue_type eq "Tonsil"){
-				$specimen_term = "UBERON:0002372";
+				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0002372";
 			} elsif($tissue_type eq "Bone marrow"){
-				$specimen_term = "UBERON:0002371";
+				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0002371";
 			}
 		}
 		
@@ -818,7 +817,7 @@ sub public_results_callback {
 		
 		foreach my $term_uri (@purified_term_uris) {
 			if($term_uri =~ /obo\/(?:((?:CLO)|(?:CL))_([^\/]+))/ || $term_uri =~ /efo\/(EFO)_([^\/]+)/) {
-				$purified_cell_type = $1.':'.$2;
+				$purified_cell_type = $term_uri;
 				last;
 			}
 		}
@@ -1277,7 +1276,7 @@ sub cachedGet($$$) {
 		File::Path::make_path($localDir);
 		#print STDERR join(" -=- ",$remotePath,$cachingDir,$localPath,$localBasePath,$localRelDir,$localDir),"\n";
 		$localPath = $bpDataServer->get($remotePath,$localPath);
-		print STDERR "DEBUGFTP: ".$bpDataServer->message."\n"  unless(defined($localPath));
+		print STDERR "DEBUGFTP: ($remotePath -> $localPath) ".$bpDataServer->message."\n"  unless(defined($localPath));
 		utime($filedate,$filedate,$localPath)  if(defined($localPath));
 	}
 	
