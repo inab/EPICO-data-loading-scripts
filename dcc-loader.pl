@@ -2,7 +2,7 @@
 
 use strict;
 
-#use diagnostics;
+use diagnostics;
 use FindBin;
 use lib $FindBin::Bin."/model/schema+tools/lib";
 
@@ -784,6 +784,8 @@ sub public_results_callback {
 			$specimen_term = $cellSpecimenTerm{$cell_line};
 		}
 		
+		Carp::croak("Undefined specimen term for $specimen_id!!!!")  unless(defined($specimen_term));
+		
 		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$cachingDir);
 		my %specimen = (
 			'specimen_id'	=>	$specimen_id,
@@ -895,7 +897,6 @@ sub public_results_callback {
 sub macsBedParser($$$) {
 	my($F,$analysis_id,$mapper) = @_;
 	
-	my $destination = $mapper->getInternalDestination();
 	# UGLY
 	my $BMAX = $mapper->{'batch-size'};
 	
@@ -944,9 +945,7 @@ sub macsBedParser($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $entorp = $mapper->validateAndEnactEntry(\@batch);
-				my $bulkData = $mapper->_bulkPrepare($entorp);
-				$mapper->_bulkInsert($destination,$bulkData);
+				$mapper->bulkInsert(\@batch);
 				
 				@batch = ();
 				$numBatch = 0;
@@ -957,9 +956,7 @@ sub macsBedParser($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $entorp = $mapper->validateAndEnactEntry(\@batch);
-		my $bulkData = $mapper->_bulkPrepare($entorp);
-		$mapper->_bulkInsert($destination,$bulkData);
+		$mapper->bulkInsert(\@batch);
 		
 		@batch = ();
 	}
@@ -968,7 +965,6 @@ sub macsBedParser($$$) {
 sub rnaGFFQuantParser($$$) {
 	my($F,$analysis_id,$mapper) = @_;
 	
-	my $destination = $mapper->getInternalDestination();
 	# UGLY
 	my $BMAX = $mapper->{'batch-size'};
 	
@@ -1023,9 +1019,7 @@ sub rnaGFFQuantParser($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $entorp = $mapper->validateAndEnactEntry(\@batch);
-				my $bulkData = $mapper->_bulkPrepare($entorp);
-				$mapper->_bulkInsert($destination,$bulkData);
+				$mapper->bulkInsert(\@batch);
 				
 				@batch = ();
 				$numBatch = 0;
@@ -1036,9 +1030,7 @@ sub rnaGFFQuantParser($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $entorp = $mapper->validateAndEnactEntry(\@batch);
-		my $bulkData = $mapper->_bulkPrepare($entorp);
-		$mapper->_bulkInsert($destination,$bulkData);
+		$mapper->bulkInsert(\@batch);
 		
 		@batch = ();
 	}
@@ -1047,7 +1039,6 @@ sub rnaGFFQuantParser($$$) {
 sub dsHotspotsBedParser($$$) {
 	my($F,$analysis_id,$mapper) = @_;
 	
-	my $destination = $mapper->getInternalDestination();
 	# UGLY
 	my $BMAX = $mapper->{'batch-size'};
 	
@@ -1080,9 +1071,7 @@ sub dsHotspotsBedParser($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $entorp = $mapper->validateAndEnactEntry(\@batch);
-				my $bulkData = $mapper->_bulkPrepare($entorp);
-				$mapper->_bulkInsert($destination,$bulkData);
+				$mapper->bulkInsert(\@batch);
 				
 				@batch = ();
 				$numBatch = 0;
@@ -1093,9 +1082,7 @@ sub dsHotspotsBedParser($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $entorp = $mapper->validateAndEnactEntry(\@batch);
-		my $bulkData = $mapper->_bulkPrepare($entorp);
-		$mapper->_bulkInsert($destination,$bulkData);
+		$mapper->bulkInsert(\@batch);
 		
 		@batch = ();
 	}
@@ -1112,7 +1099,6 @@ sub dlatBedHypoMParser($$$) {
 sub __dlatBedParser($$$$) {
 	my($F,$analysis_id,$mapper,$hyperhypo) = @_;
 	
-	my $destination = $mapper->getInternalDestination();
 	# UGLY
 	my $BMAX = $mapper->{'batch-size'};
 	
@@ -1159,9 +1145,7 @@ sub __dlatBedParser($$$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $entorp = $mapper->validateAndEnactEntry(\@batch);
-				my $bulkData = $mapper->_bulkPrepare($entorp);
-				$mapper->_bulkInsert($destination,$bulkData);
+				$mapper->bulkInsert(\@batch);
 				
 				@batch = ();
 				$numBatch = 0;
@@ -1172,9 +1156,7 @@ sub __dlatBedParser($$$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $entorp = $mapper->validateAndEnactEntry(\@batch);
-		my $bulkData = $mapper->_bulkPrepare($entorp);
-		$mapper->_bulkInsert($destination,$bulkData);
+		$mapper->bulkInsert(\@batch);
 		
 		@batch = ();
 	}
@@ -1183,7 +1165,6 @@ sub __dlatBedParser($$$$) {
 sub dlatTxtCpGParser($$$) {
 	my($F,$analysis_id,$mapper) = @_;
 	
-	my $destination = $mapper->getInternalDestination();
 	# UGLY
 	my $BMAX = $mapper->{'batch-size'};
 	
@@ -1230,9 +1211,7 @@ sub dlatTxtCpGParser($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				my $entorp = $mapper->validateAndEnactEntry(\@batch);
-				my $bulkData = $mapper->_bulkPrepare($entorp);
-				$mapper->_bulkInsert($destination,$bulkData);
+				$mapper->bulkInsert(\@batch);
 				
 				@batch = ();
 				$numBatch = 0;
@@ -1243,9 +1222,7 @@ sub dlatTxtCpGParser($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		my $entorp = $mapper->validateAndEnactEntry(\@batch);
-		my $bulkData = $mapper->_bulkPrepare($entorp);
-		$mapper->_bulkInsert($destination,$bulkData);
+		$mapper->bulkInsert(\@batch);
 		
 		@batch = ();
 	}
@@ -1275,8 +1252,9 @@ sub cachedGet($$$) {
 		$remotePath = '/'.$remotePath  unless(substr($remotePath,0,1) eq '/');
 		File::Path::make_path($localDir);
 		#print STDERR join(" -=- ",$remotePath,$cachingDir,$localPath,$localBasePath,$localRelDir,$localDir),"\n";
+		my $targetLocalPath = $localPath;
 		$localPath = $bpDataServer->get($remotePath,$localPath);
-		print STDERR "DEBUGFTP: ($remotePath -> $localPath) ".$bpDataServer->message."\n"  unless(defined($localPath));
+		print STDERR "DEBUGFTP: ($remotePath -> $targetLocalPath) ".$bpDataServer->message."\n"  unless(defined($localPath));
 		utime($filedate,$filedate,$localPath)  if(defined($localPath));
 	}
 	
@@ -1365,10 +1343,18 @@ sub parseIHECexperiment($$$$) {
 	return (\%IHECexperiment,$library_strategy,$instrument_model);
 }
 
+my $testmode = undef;
+if(scalar(@ARGV)>0 && $ARGV[0] eq '-t') {
+	$testmode = 1;
+	shift(@ARGV);
+	print "* [TESTMODE] Enabled test mode (only validating data)\n";
+}
+
 if(scalar(@ARGV)>=2) {
 	STDOUT->autoflush(1);
 	STDERR->autoflush(1);
 	my $iniFile = shift(@ARGV);
+	
 	# Defined outside
 	$cachingDir = shift(@ARGV);
 	my $modelDomain = shift(@ARGV);
@@ -1492,6 +1478,7 @@ if(scalar(@ARGV)>=2) {
 				TabParser::TAG_CONTEXT	=> \%exp2EGA,
 				TabParser::TAG_CALLBACK => \&experiments_to_datasets_callback,
 			);
+			$e2dConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
 			TabParser::parseTab($E2D,%e2dConfig);
 			close($E2D);
 		} else {
@@ -1506,6 +1493,7 @@ if(scalar(@ARGV)>=2) {
 				TabParser::TAG_FETCH_COLS => PUBLIC_INDEX_COLS,
 				TabParser::TAG_CALLBACK => \&public_results_callback,
 			);
+			$indexConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
 			TabParser::parseTab($PSI,%indexConfig);
 			close($PSI);
 		} else {
@@ -1521,6 +1509,7 @@ if(scalar(@ARGV)>=2) {
 				TabParser::TAG_POS_FILTER	=> [['FILE_TYPE' => 'BS_METH_TABLE_CYTOSINES_CNAG']],
 				TabParser::TAG_CALLBACK => \&data_files_callback,
 			);
+			$indexConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
 			TabParser::parseTab($DFI,%indexConfig);
 			close($DFI);
 		} else {
@@ -1535,8 +1524,12 @@ if(scalar(@ARGV)>=2) {
 			
 			# Now, do we need to push the metadata there?
 			if(!$ini->exists($BP::Loader::Mapper::SECTION,'metadata-loaders') || $ini->val($BP::Loader::Mapper::SECTION,'metadata-loaders') eq 'true') {
-				print "\t* Storing native model\n";
-				$mapper->storeNativeModel();
+				if($testmode) {
+					print "\t [TESTMODE]Skipping storage of metadata model\n";
+				} else {
+					print "\t* Storing native model\n";
+					$mapper->storeNativeModel();
+				}
 			}
 			
 			# Several hacks in a row... Yuck!
@@ -1555,10 +1548,14 @@ if(scalar(@ARGV)>=2) {
 				$mapper->setDestination($corrConcepts{'donor'});
 				
 				@bulkArray = values(%donors);
-				$destination = $mapper->getInternalDestination();
 				$entorp = $mapper->validateAndEnactEntry(\@bulkArray);
-				$bulkData = $mapper->_bulkPrepare($entorp);
-				$mapper->_bulkInsert($destination,$bulkData);
+				unless($testmode) {
+					$destination = $mapper->getInternalDestination();
+					$bulkData = $mapper->_bulkPrepare($entorp);
+					$mapper->_bulkInsert($destination,$bulkData);
+				} else {
+					print "[TESTMODE] Skipping storage of donors\n";
+				}
 				
 				$destination = undef;
 				$mapper->freeDestination();
@@ -1570,10 +1567,14 @@ if(scalar(@ARGV)>=2) {
 				$mapper->setDestination($corrConcepts{'specimen'});
 				
 				@bulkArray = values(%specimens);
-				$destination = $mapper->getInternalDestination();
 				$entorp = $mapper->validateAndEnactEntry(\@bulkArray);
-				$bulkData = $mapper->_bulkPrepare($entorp);
-				$mapper->_bulkInsert($destination,$bulkData);
+				unless($testmode) {
+					$destination = $mapper->getInternalDestination();
+					$bulkData = $mapper->_bulkPrepare($entorp);
+					$mapper->_bulkInsert($destination,$bulkData);
+				} else {
+					print "[TESTMODE] Skipping storage of specimens\n";
+				}
 				
 				$destination = undef;
 				$mapper->freeDestination();
@@ -1585,10 +1586,14 @@ if(scalar(@ARGV)>=2) {
 				$mapper->setDestination($corrConcepts{'sample'});
 				
 				@bulkArray = values(%samples);
-				$destination = $mapper->getInternalDestination();
 				$entorp = $mapper->validateAndEnactEntry(\@bulkArray);
-				$bulkData = $mapper->_bulkPrepare($entorp);
-				$mapper->_bulkInsert($destination,$bulkData);
+				unless($testmode) {
+					$destination = $mapper->getInternalDestination();
+					$bulkData = $mapper->_bulkPrepare($entorp);
+					$mapper->_bulkInsert($destination,$bulkData);
+				} else {
+					print "[TESTMODE] Skipping storage of samples\n";
+				}
 				
 				$destination = undef;
 				$mapper->freeDestination();
@@ -1614,10 +1619,14 @@ if(scalar(@ARGV)>=2) {
 
 						print "Storing $labFullname\n\t* ",$labConceptDomain->conceptHash->{$expDomain}->fullname,"...\n";
 						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{$expDomain}));
-						$destination = $mapper->getInternalDestination();
 						$entorp = $mapper->validateAndEnactEntry($lab{$expDomain});
-						$bulkData = $mapper->_bulkPrepare($entorp);
-						$mapper->_bulkInsert($destination,$bulkData);
+						unless($testmode) {
+							$destination = $mapper->getInternalDestination();
+							$bulkData = $mapper->_bulkPrepare($entorp);
+							$mapper->_bulkInsert($destination,$bulkData);
+						} else {
+							print "\t[TESTMODE] Skipping storage of IHEC experiment data $labFullname\n";
+						}
 						
 						$destination = undef;
 						$mapper->freeDestination();
@@ -1634,10 +1643,14 @@ if(scalar(@ARGV)>=2) {
 								if(exists($corrConcepts{'m'})) {
 									print "\t* ",$corrConcepts{'m'}->concept->fullname,"...\n";
 									$mapper->setDestination($corrConcepts{'m'});
-									$destination = $mapper->getInternalDestination();
 									$entorp = $mapper->validateAndEnactEntry($anal{$analDomain});
-									$bulkData = $mapper->_bulkPrepare($entorp);
-									$mapper->_bulkInsert($destination,$bulkData);
+									unless($testmode) {
+										$destination = $mapper->getInternalDestination();
+										$bulkData = $mapper->_bulkPrepare($entorp);
+										$mapper->_bulkInsert($destination,$bulkData);
+									} else {
+										print "\t[TESTMODE] Skipping storage of analysis metadata ".$corrConcepts{'m'}->concept->fullname."\n";
+									}
 									
 									$destination = undef;
 									$mapper->freeDestination();
@@ -1671,14 +1684,20 @@ if(scalar(@ARGV)>=2) {
 													}
 													
 													if(open(my $F,$f_mode,@f_params)) {
-														eval {
-															$method->($F,$analysis_id,$mapper);
-														};
-														
-														if($@) {
-															Carp::carp("Errors while processing $remote_file: ".$@);
+														unless($testmode) {
+															eval {
+																$method->($F,$analysis_id,$mapper);
+															};
+															
+															if($@) {
+																Carp::carp("Errors while processing $remote_file: ".$@);
+															}
+														} else {
+															print "\t[TESTMODE] Skipping storage of ".$corrConcepts{$conceptName}->concept->fullname." ($local_file)\n";
 														}
 														close($F);
+													} else {
+														Carp::carp("File $local_file (fetched from $remote_file) not processed. Reason: ".$!);
 													}
 													
 													# At the end, free space of the huge downloaded file
@@ -1708,5 +1727,5 @@ if(scalar(@ARGV)>=2) {
 	$bpDataServer->quit()  if($bpDataServer->can('quit'));
 	
 } else {
-	print STDERR "Usage: $0 iniFile cachingDir [",join('|','sdata',keys(%DOMAIN2EXPANAL)),"]\n"
+	print STDERR "Usage: $0 [-t] iniFile cachingDir [",join('|','sdata',keys(%DOMAIN2EXPANAL)),"]\n"
 }
