@@ -506,7 +506,7 @@ my %FILETYPE2ANAL = (
 		'mr',
 		\&dlatBedHypoMParser,
 		METH_HYPO_METADATA,
-		CNAG_CPGS_POSTFIX
+		undef	#CNAG_CPGS_POSTFIX
 	],
 	
 	'BS_METH_TABLE_CYTOSINES_CNAG'	=>	[
