@@ -511,16 +511,16 @@ my %FILETYPE2ANAL = (
 		undef	#CNAG_CPGS_POSTFIX
 	],
 	
-	'BS_METH_TABLE_CYTOSINES_CNAG'	=>	[
-		'dlat',
-		['11'],
-		undef,
-		[['cpgs.bs_call' => +CNAG_CPGS_POSTFIX]],
-		'cpg',
-		\&dlatTxtCpGParser,
-		METH_CPG_METADATA,
-		undef	#CNAG_CYTOSINES_POSTFIX
-	],
+#	'BS_METH_TABLE_CYTOSINES_CNAG'	=>	[
+#		'dlat',
+#		['11'],
+#		undef,
+#		[['cpgs.bs_call' => +CNAG_CPGS_POSTFIX]],
+#		'cpg',
+#		\&dlatTxtCpGParser,
+#		METH_CPG_METADATA,
+#		undef	#CNAG_CYTOSINES_POSTFIX
+#	],
 );
 
 ######
