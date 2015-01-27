@@ -3,6 +3,8 @@
 use strict;
 
 use diagnostics;
+
+use Config::IniFiles;
 use FindBin;
 use lib $FindBin::Bin."/model/schema+tools/lib";
 
