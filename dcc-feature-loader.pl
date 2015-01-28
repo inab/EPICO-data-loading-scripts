@@ -6,6 +6,7 @@ no warnings qw(experimental);
 use strict;
 use diagnostics;
 
+use Config::IniFiles;
 use FindBin;
 use lib $FindBin::Bin."/model/schema+tools/lib";
 
@@ -21,9 +22,9 @@ use URI;
 use BP::Model;
 use BP::Loader::CorrelatableConcept;
 use BP::Loader::Mapper;
-use BP::Loader::Mapper::Relational;
-use BP::Loader::Mapper::Elasticsearch;
-use BP::Loader::Mapper::MongoDB;
+use BP::Loader::Mapper::Autoload::Relational;
+use BP::Loader::Mapper::Autoload::Elasticsearch;
+use BP::Loader::Mapper::Autoload::MongoDB;
 
 use TabParser;
 
@@ -76,8 +77,9 @@ sub cachedGet($$$) {
 		$remotePath = '/'.$remotePath  unless(substr($remotePath,0,1) eq '/');
 		File::Path::make_path($localDir);
 		#print STDERR join(" -=- ",$remotePath,$cachingDir,$localPath,$localBasePath,$localRelDir,$localDir),"\n";
+		my $targetLocalPath = $localPath;
 		$localPath = $ftpServer->get($remotePath,$localPath);
-		print STDERR "DEBUGFTP: ".$ftpServer->message."\n"  unless(defined($localPath));
+		print STDERR "DEBUGFTP: ($remotePath -> $targetLocalPath) ".$ftpServer->message."\n"  unless(defined($localPath));
 		utime($filedate,$filedate,$localPath)  if(defined($localPath));
 	}
 	
@@ -85,9 +87,12 @@ sub cachedGet($$$) {
 }
 
 sub parseSeqRegions($$$) {
-	my($p_regionId,$seq_region_id,$name) = @_;
+	my($payload,$seq_region_id,$name) = @_;
 	
-	$p_regionId->{$seq_region_id} = $name;
+	my($p_regionId,$chroCV) = @{$payload};
+	
+	my $term = $chroCV->getTerm($name);
+	$p_regionId->{$seq_region_id} = $term->key()  if($term);
 	
 	1;
 }
@@ -95,7 +100,7 @@ sub parseSeqRegions($$$) {
 sub parseENS($$$$$$$$) {
 	my($payload,$seq_region_id,$chromosome_start,$chromosome_end,$display_xref_id,$stable_id,$version,$description,$internal_id,$internal_gene_id)=@_;
 	
-	my($p_regionId,$p_ENShash,$p_ENSintHash,$p_geneMap) = @{$payload};
+	my($p_regionId,$p_ENShash,$p_ENSintHash,$p_geneMap,$chroCV) = @{$payload};
 	
 	if(exists($p_regionId->{$seq_region_id})) {
 		my $fullStableId = $stable_id.'.'.$version;
@@ -156,7 +161,7 @@ sub parseGTF(@) {
 		$attributes_str, # attributes following .ace format
 	) = @_;
 	
-	my($p_ENShash,$p_mappers) = @{$payload};
+	my($p_ENShash,$p_mappers,$chroCV) = @{$payload};
 	
 	my %attributes = ();
 	
@@ -195,29 +200,30 @@ sub parseGTF(@) {
 	}
 	
 	if($local) {
-		my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
-		
-		$chromosome = 'MT'  if($chromosome eq 'M');
-		
-		$p_regionData = {
-			#$fullEnsemblId,
-			'feature_cluster_id'	=> $attributes{'gene_id'},
-			'chromosome'	=> $chromosome,
-			'chromosome_start'	=> $chromosome_start,
-			'chromosome_end'	=> $chromosome_end,
-			'symbol'	=> [$fullEnsemblId,$ensemblId],
-			'feature'	=> $feature
-		};
+		my $term = $chroCV->getTerm($chro);
+		if($term) {
+			$p_regionData = {
+				#$fullEnsemblId,
+				'feature_cluster_id'	=> $attributes{'gene_id'},
+				'chromosome'	=> $term->key(),
+				'chromosome_start'	=> $chromosome_start,
+				'chromosome_end'	=> $chromosome_end,
+				'symbol'	=> [$fullEnsemblId,$ensemblId],
+				'feature'	=> $feature
+			};
+		}
 	}
 	
-	foreach my $ensFeature (@{$p_ensFeatures}) {
-		push(@{$p_regionData->{symbol}},$attributes{$ensFeature})  if(exists($attributes{$ensFeature}));
-	}
-	
-	# Last, store it!!!
-	if($local) {
-		foreach my $mapper (@{$p_mappers}) {
-			$mapper->bulkInsert($p_regionData);
+	if($p_regionData) {
+		foreach my $ensFeature (@{$p_ensFeatures}) {
+			push(@{$p_regionData->{symbol}},$attributes{$ensFeature})  if(exists($attributes{$ensFeature}));
+		}
+		
+		# Last, store it!!!
+		if($local) {
+			foreach my $mapper (@{$p_mappers}) {
+				$mapper->bulkInsert($p_regionData);
+			}
 		}
 	}
 	
@@ -405,6 +411,9 @@ if(scalar(@ARGV)>=2) {
 	$ftpServer->quit()  if($ftpServer->can('quit'));
 	$ftpServer = undef;
 	
+	# These are the known chromosomes
+	my $chroCV = $model->getNamedCV('EnsemblChromosomes');
+	
 	# This hash holds the seq_region_id -> name correspondence
 	my %regionId = ();
 	
@@ -422,7 +431,7 @@ if(scalar(@ARGV)>=2) {
 	print "Parsing ",$localSeqRegion,"\n";
 	if(open(my $SEQREG,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localSeqRegion)) {
 		my %config = (
-			TabParser::TAG_CONTEXT	=> \%regionId,
+			TabParser::TAG_CONTEXT	=> [\%regionId,$chroCV],
 			TabParser::TAG_CALLBACK => \&parseSeqRegions,
 			# The columns are 
 			#	seq_region_id
@@ -441,7 +450,7 @@ if(scalar(@ARGV)>=2) {
 	print "Parsing ",$localGenes,"\n";
 	if(open(my $ENSG,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localGenes)) {
 		my %config = (
-			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap],
+			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV],
 			TabParser::TAG_CALLBACK => \&parseENS,
 			# The columns are 
 			#	seq_region_id
@@ -465,7 +474,7 @@ if(scalar(@ARGV)>=2) {
 	print "Parsing ",$localTranscripts,"\n";
 	if(open(my $ENST,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localTranscripts)) {
 		my %config = (
-			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap],
+			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV],
 			TabParser::TAG_CALLBACK => \&parseENS,
 			# The columns are 
 			#	seq_region_id
@@ -516,7 +525,7 @@ if(scalar(@ARGV)>=2) {
 	if(open(my $GTF,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localGTF)) {
 		my %config = (
 			TabParser::TAG_COMMENT	=>	'#',
-			TabParser::TAG_CONTEXT	=> [\%ENShash,\@mappers],
+			TabParser::TAG_CONTEXT	=> [\%ENShash,\@mappers,$chroCV],
 			TabParser::TAG_CALLBACK => \&parseGTF,
 		);
 		TabParser::parseTab($GTF,%config);
