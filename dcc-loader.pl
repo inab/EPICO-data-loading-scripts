@@ -115,6 +115,7 @@ my %DOMAIN2EXPANAL = (
 
 my %INSTRUMENT2PLATFORM = (
 	'Illumina HiSeq 2000'	=>	60,
+	'NextSeq 500'	=>	100,
 );
 
 #####
@@ -745,11 +746,13 @@ sub public_results_callback {
 		
 		my $donor_min_age_at_specimen_acquisition = undef;
 		my $donor_max_age_at_specimen_acquisition = undef;
-		if($donor_age =~ /(\d+)\s+-\s+(\d+)/) {
+		if($donor_age =~ /(\d+)\s*-\s*(\d+)/) {
 			$donor_min_age_at_specimen_acquisition = 'P'.$1.'Y';
 			$donor_max_age_at_specimen_acquisition = 'P'.$2.'Y';
 		} elsif($donor_age =~ /(\d+)\s+weeks/) {
 			$donor_min_age_at_specimen_acquisition = $donor_max_age_at_specimen_acquisition = 'P'.$1.'M';
+		} elsif($donor_age =~ /(\d+)\s+days/) {
+			$donor_min_age_at_specimen_acquisition = $donor_max_age_at_specimen_acquisition = 'P'.$1.'D';
 		} else {
 			$donor_min_age_at_specimen_acquisition = 'P0Y';
 		}
@@ -768,7 +771,7 @@ sub public_results_callback {
 		}
 		
 		unless(defined($specimen_term)) {
-			if ($tissue_type eq "Peripheral blood"){
+			if ($tissue_type eq "Peripheral blood" || $tissue_type eq "Venous blood"){
 				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0013756";
 			} elsif($tissue_type eq "Cord blood"){
 				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0012168";
@@ -831,6 +834,9 @@ sub public_results_callback {
 			$cellPurifiedTerm{$cell_line} = $purified_cell_type  if($cell_line ne '-' && !exists($cellPurifiedTerm{$cell_line}));
 		} elsif($cell_line ne '-' && exists($cellPurifiedTerm{$cell_line})) {
 			$purified_cell_type = $cellPurifiedTerm{$cell_line};
+		} else {
+			# When we don't know, it is the most general term, hematopoietic cell
+			$purified_cell_type = "http://purl.obolibrary.org/obo/CL_0000988";
 		}
 		
 		my %sample = (
@@ -1503,7 +1509,7 @@ if(scalar(@ARGV)>=2) {
 		}
 
 		print "Parsing ",DATA_FILES_INDEX,"...\n";
-		# Now, let's parse the public.site.index, the backbone
+		# Now, let's parse the data_files.index, the backbone
 		if(open(my $DFI,'<:encoding(UTF-8)',$localDataFilesIndexPath)) {
 			my %indexConfig = (
 				TabParser::TAG_HAS_HEADER	=> 1,
