@@ -19,6 +19,7 @@ use Tie::IxHash;
 use XML::LibXML::Reader;
 
 use BP::Model;
+use BP::Loader::Tools;
 use BP::Loader::CorrelatableConcept;
 use BP::Loader::Mapper;
 use BP::Loader::Mapper::Autoload::Relational;
@@ -1685,7 +1686,7 @@ if(scalar(@ARGV)>=2) {
 													# Compressed file detection
 													if($local_file =~ /\.gz$/) {
 														$f_mode = '-|';
-														push(@f_params,'gunzip','-c',$local_file);
+														push(@f_params,BP::Loader::Tools::GUNZIP,'-c',$local_file);
 													} else {
 														$f_mode = '<';
 														push(@f_params,$local_file);
