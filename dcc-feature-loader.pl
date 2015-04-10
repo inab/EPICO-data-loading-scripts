@@ -21,6 +21,7 @@ use URI;
 
 use BP::Model;
 use BP::Loader::CorrelatableConcept;
+use BP::Loader::Tools;
 use BP::Loader::Mapper;
 use BP::Loader::Mapper::Autoload::Relational;
 use BP::Loader::Mapper::Autoload::Elasticsearch;
@@ -283,13 +284,13 @@ if(scalar(@ARGV)>=2) {
 	
 	# Check the needed parameters for the construction
 	if($ini->exists(DCC_LOADER_SECTION,ENSEMBL_FTP_BASE_TAG)) {
-		$ensembl_ftp_base = URI->new($ini->val(DCC_LOADER_SECTION,ENSEMBL_FTP_BASE_TAG));
+		$ensembl_ftp_base = $ini->val(DCC_LOADER_SECTION,ENSEMBL_FTP_BASE_TAG);
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".ENSEMBL_FTP_BASE_TAG."'");
 	}
 	
 	if($ini->exists(DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG)) {
-		$gencode_ftp_base = URI->new($ini->val(DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG));
+		$gencode_ftp_base = $ini->val(DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG);
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".GENCODE_FTP_BASE_TAG."'");
 	}
@@ -331,6 +332,25 @@ if(scalar(@ARGV)>=2) {
 		Carp::croak('ERROR: Model parsing and validation failed. Reason: '.$@);
 	}
 	print "\tDONE!\n";
+	
+	# Now, let's patch the properies of the different remote resources, using the properties inside the model
+	foreach my $refvar (\($ensembl_ftp_base,$gencode_ftp_base,$gencode_gtf_file,$reactome_bundle_file)) {
+		# We want the unique replacements
+		my %replacements = map { $_ => undef } $$refvar =~ /\{([^}]+)\}/g;
+		
+		foreach my $var (keys(%replacements)) {
+			if(exists($model->annotations->hash->{$var})) {
+				my $val = $model->annotations->hash->{$var};
+				$$refvar =~ s/\Q{$var}\E/$val/g;
+			} else {
+				Carp::croak("ERROR: annotation $var (used in $iniFile) does not exist in model $modelFile");
+			}
+		}
+	}
+	
+	# And translate these to URI objects
+	$ensembl_ftp_base = URI->new($ensembl_ftp_base);
+	$gencode_ftp_base = URI->new($gencode_ftp_base);
 	
 	my %storageModels = ();
 	
@@ -429,7 +449,7 @@ if(scalar(@ARGV)>=2) {
 	my %ENSintHash = ();
 	
 	print "Parsing ",$localSeqRegion,"\n";
-	if(open(my $SEQREG,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localSeqRegion)) {
+	if(open(my $SEQREG,'-|',BP::Loader::Tools::GUNZIP,'-c',$localSeqRegion)) {
 		my %config = (
 			TabParser::TAG_CONTEXT	=> [\%regionId,$chroCV],
 			TabParser::TAG_CALLBACK => \&parseSeqRegions,
@@ -448,7 +468,7 @@ if(scalar(@ARGV)>=2) {
 	my %geneMap;
 	
 	print "Parsing ",$localGenes,"\n";
-	if(open(my $ENSG,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localGenes)) {
+	if(open(my $ENSG,'-|',BP::Loader::Tools::GUNZIP,'-c',$localGenes)) {
 		my %config = (
 			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV],
 			TabParser::TAG_CALLBACK => \&parseENS,
@@ -472,7 +492,7 @@ if(scalar(@ARGV)>=2) {
 	}
 	
 	print "Parsing ",$localTranscripts,"\n";
-	if(open(my $ENST,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localTranscripts)) {
+	if(open(my $ENST,'-|',BP::Loader::Tools::GUNZIP,'-c',$localTranscripts)) {
 		my %config = (
 			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV],
 			TabParser::TAG_CALLBACK => \&parseENS,
@@ -501,7 +521,7 @@ if(scalar(@ARGV)>=2) {
 	%geneMap = ();
 	
 	print "Parsing ",$localXref,"\n";
-	if(open(my $XREF,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localXref)) {
+	if(open(my $XREF,'-|',BP::Loader::Tools::GUNZIP,'-c',$localXref)) {
 		my %config = (
 			TabParser::TAG_CONTEXT	=> \%ENSintHash,
 			TabParser::TAG_CALLBACK => \&parseXREF,
@@ -522,7 +542,7 @@ if(scalar(@ARGV)>=2) {
 	%ENSintHash = ();
 	
 	print "Parsing ",$localGTF,"\n";
-	if(open(my $GTF,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localGTF)) {
+	if(open(my $GTF,'-|',BP::Loader::Tools::GUNZIP,'-c',$localGTF)) {
 		my %config = (
 			TabParser::TAG_COMMENT	=>	'#',
 			TabParser::TAG_CONTEXT	=> [\%ENShash,\@mappers,$chroCV],
@@ -545,7 +565,7 @@ if(scalar(@ARGV)>=2) {
 	my $localReactomeInteractionsFile = File::Spec->catfile($cachingDir,REACTOME_INTERACTIONS_FILE);
 	print "Parsing ",$localReactomeInteractionsFile,"\n";
 	if(-f $localReactomeInteractionsFile || system('tar','xf',$reactome_bundle_local,'-C',$cachingDir,'--transform=s,^.*/,,','--wildcards','*/'.REACTOME_INTERACTIONS_FILE)==0) {
-		if(open(my $REACT,'-|',BP::Loader::CorrelatableConcept::GUNZIP,'-c',$localReactomeInteractionsFile)) {
+		if(open(my $REACT,'-|',BP::Loader::Tools::GUNZIP,'-c',$localReactomeInteractionsFile)) {
 			my $reactomeConcept = $model->getConceptDomain('external')->conceptHash->{'reactome'};
 			my $reactomeCorrConcept = BP::Loader::CorrelatableConcept->new($reactomeConcept);
 			foreach my $mapper (@mappers) {
