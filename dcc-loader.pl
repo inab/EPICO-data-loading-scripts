@@ -1456,8 +1456,8 @@ if(scalar(@ARGV)>=2) {
 		my $model = undef;
 		eval {
 			$model = BP::Model->new($modelFile);
-			$ensembl_version = exists($model->annotations->hash->{GENCODEVer})?$model->annotations->hash->{GENCODEVer}:'';
-			$gencode_version = exists($model->annotations->hash->{GENCODEVer})?$model->annotations->hash->{EnsemblVer}:'';
+			$ensembl_version = exists($model->annotations->hash->{GENCODEVer})?$model->annotations->hash->{EnsemblVer}:'';
+			$gencode_version = exists($model->annotations->hash->{GENCODEVer})?$model->annotations->hash->{GENCODEVer}:'';
 		};
 		
 		if($@) {
