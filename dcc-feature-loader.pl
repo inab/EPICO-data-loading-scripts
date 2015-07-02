@@ -444,18 +444,12 @@ if(scalar(@ARGV)>=2) {
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
 	my $ensembl_sql_file = ENSEMBL_SQL_FILE;
-	foreach my $refvar (\($ensembl_ftp_base,$gencode_ftp_base,$gencode_gtf_file,$reactome_bundle_file,$ensembl_sql_file)) {
-		# We want the unique replacements
-		my %replacements = map { $_ => undef } $$refvar =~ /\{([^}]+)\}/g;
-		
-		foreach my $var (keys(%replacements)) {
-			if(exists($model->annotations->hash->{$var})) {
-				my $val = $model->annotations->hash->{$var};
-				$$refvar =~ s/\Q{$var}\E/$val/g;
-			} else {
-				Carp::croak("ERROR: annotation $var (used in $iniFile) does not exist in model $modelFile");
-			}
-		}
+	eval {
+		$model->annotations->applyAnnotations(\($ensembl_ftp_base,$gencode_ftp_base,$gencode_gtf_file,$reactome_bundle_file,$ensembl_sql_file));
+	};
+	
+	if($@) {
+		Carp::croak("$@ (does not exist in model $modelFile, used in $iniFile)");
 	}
 	
 	# And translate these to URI objects
