@@ -36,27 +36,35 @@ sub new(;$$) {
 sub getParsingFeatures() {
 	my($self)=shift;
 	
+	my $CHIP_WIGGLER = [
+		'pdna',
+		['1'],
+		'cs_wiggler',
+		undef,
+		undef,
+		undef,
+		WIGGLER_METADATA,
+		undef
+	];
+	
+	my $DNASE_WIGGLER = [
+		'rreg',
+		['8'],
+		'ds_wiggler',
+		undef,
+		undef,
+		undef,
+		WIGGLER_METADATA,
+		undef
+	];
+	
 	return {
-		'CHIP_WIGGLER'	=>	[
-			'pdna',
-			['1'],
-			'cs_wiggler',
-			undef,
-			undef,
-			undef,
-			WIGGLER_METADATA,
-			undef
-		],
-		'DNASE_WIGGLER'	=>	[
-			'rreg',
-			['8'],
-			'ds_wiggler',
-			undef,
-			undef,
-			undef,
-			WIGGLER_METADATA,
-			undef
-		],
+		# The two firsts are the old ones
+		'CS_WIGGLER'	=>	$CHIP_WIGGLER,
+		'DS_WIGGLER'	=>	$DNASE_WIGGLER,
+		
+		'CHIP_WIGGLER'	=>	$CHIP_WIGGLER,
+		'DNASE_WIGGLER'	=>	$DNASE_WIGGLER,
 	};
 }
 

@@ -66,28 +66,35 @@ sub new(;$$) {
 sub getParsingFeatures() {
 	my($self)=shift;
 	
-	return {
-		'CHIP_MACS2_BROAD_BED'	=>	[
-			'pdna',
-			['1'],
-			undef,
-			[['bed.gz' => 'cs_broad_peaks']],
-			'p',
-			$self,
-			CS_METADATA,
-			undef
-		],
+	my $MACS_BROAD_BED = [
+		'pdna',
+		['1'],
+		undef,
+		[['bed.gz' => 'cs_broad_peaks']],
+		'p',
+		$self,
+		CS_METADATA,
+		undef
+	];
 		
-		'CHIP_MACS2_BED'	=>	[
-			'pdna',
-			['1'],
-			undef,
-			[['bed.gz' => 'cs_peaks']],
-			'p',
-			$self,
-			CS_METADATA,
-			undef
-		],
+	my $MACS_BED = [
+		'pdna',
+		['1'],
+		undef,
+		[['bed.gz' => 'cs_peaks']],
+		'p',
+		$self,
+		CS_METADATA,
+		undef
+	];
+
+	return {
+		# The two firsts are the old ones
+		'CS_BROAD_MACS2'	=>	$MACS_BROAD_BED,
+		'CS_MACS2'	=>	$MACS_BED,
+		
+		'CHIP_MACS2_BROAD_BED'	=>	$MACS_BROAD_BED,
+		'CHIP_MACS2_BED'	=>	$MACS_BED,
 	};
 	
 }
