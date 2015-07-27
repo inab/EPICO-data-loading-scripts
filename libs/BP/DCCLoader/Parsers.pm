@@ -20,4 +20,28 @@ use constant {
 	F_PARENT_POSTFIX	=>	7,
 };
 
+{
+my %FILETYPE2ANAL = ();
+
+sub _registerParsableFiletypes(\%) {
+	if(ref($_[0]) eq 'HASH') {
+		my $p_parsable = $_[0];
+		
+		foreach my $newtype (keys(%{$p_parsable})) {
+			if(exists($FILETYPE2ANAL{$newtype})) {
+				Carp::carp("WARNING: Trying to register twice the filetype $newtype. Ignoring...");
+			} else {
+				$FILETYPE2ANAL{$newtype} = $p_parsable->{$newtype};
+			}
+		}
+	}
+}
+
+# It returns the registered parsable filetypes
+sub getParsableFiletypes() {
+	return \%FILETYPE2ANAL;
+}
+
+}
+
 1;
