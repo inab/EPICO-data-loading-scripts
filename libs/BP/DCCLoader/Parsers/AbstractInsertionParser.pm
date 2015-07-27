@@ -16,6 +16,7 @@ sub new() {
 	return bless({},$class);
 }
 
+# A template of metadata
 use constant UNK_METADATA => {
 	'assembly_version'	=>	1,
 	'program_versions'	=>	[
