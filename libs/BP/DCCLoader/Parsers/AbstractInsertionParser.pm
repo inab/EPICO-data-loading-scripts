@@ -50,4 +50,7 @@ sub insert($$$) {
 	Carp::croak("Abstract method! You should implement it!");
 }
 
+# Uncomment this on the different parsers in order to self-register the singletons
+# BP::DCCLoader::Parsers::_registerParsableFiletypes(__PACKAGE__);
+
 1;

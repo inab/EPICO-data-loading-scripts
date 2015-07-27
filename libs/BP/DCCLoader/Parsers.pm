@@ -23,13 +23,14 @@ use constant {
 {
 my %FILETYPE2ANAL = ();
 
-sub _registerParsableFiletypes(\%) {
-	if(ref($_[0]) eq 'HASH') {
-		my $p_parsable = $_[0];
+sub _registerParsableFiletypes($) {
+	foreach my $clazz (@_) {
+		my $instance = $clazz->new();
+		my $p_parsable = $instance->getParsingFeatures();
 		
 		foreach my $newtype (keys(%{$p_parsable})) {
 			if(exists($FILETYPE2ANAL{$newtype})) {
-				Carp::carp("WARNING: Trying to register twice the filetype $newtype. Ignoring...");
+				Carp::carp("WARNING: Trying to register twice the filetype $newtype while loading $clazz. Ignoring...");
 			} else {
 				$FILETYPE2ANAL{$newtype} = $p_parsable->{$newtype};
 			}

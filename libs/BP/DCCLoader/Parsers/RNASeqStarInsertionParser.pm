@@ -5,35 +5,11 @@ use strict;
 
 use TabParser;
 
-package BP::DCCLoader::Parsers::RNASeqGFFInsertionParser;
+package BP::DCCLoader::Parsers::RNASeqStarInsertionParser;
 
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
 
-use constant CBR_METADATA => {
-	'assembly_version'	=>	8,
-	'program_versions'	=>	[
-		{
-			'program'	=>	'Bowtie',
-			'version'	=>	'0.12.8'
-		},
-		{
-			'program'	=>	'MMSEQ',
-			'version'	=>	'1.0.5'
-		}
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'Bowtie',
-		'url'	=>	'http://bowtie-bio.sourceforge.net/index.shtml',
-	},
-	'other_analysis_algorithm'	=>	[
-		{
-			'name'	=>	'MMSEQ',
-			'url'	=>	'https://github.com/eturro/mmseq',
-		}
-	],
-};
-
-use constant CRG_METADATA => {
+use constant CRG_STAR_METADATA => {
 	'assembly_version'	=>	1,
 	'program_versions'	=>	[
 	],
@@ -71,58 +47,25 @@ sub getParsingFeatures() {
 	my($self)=shift;
 	
 	return {
-		'RNA_GENE_QUANT_CBR'	=>	[
+		'RNA_GENE_QUANT_STAR_CRG'	=>	[
 			'exp',
-			['3b'],
+			['15b'],
 			undef,
-			[['.gff.gz' => 'gq_cbr']],
+			[['.results' => 'gq_crg']],
 			'g',
 			$self,
-			CBR_METADATA,
+			CRG_STAR_METADATA,
 			undef
 		],
 		
-		'RNA_GENE_QUANT_CRG'	=>	[
+		'RNA_TRANSCRIPT_QUANT_STAR_CRG'	=>	[
 			'exp',
 			['15b'],
 			undef,
-			[['.gff' => 'gq_crg']],
-			'g',
-			$self,
-			CRG_METADATA,
-			undef
-		],
-		
-		'RNA_TRANSCRIPT_QUANT_CBR'	=>	[
-			'exp',
-			['3b'],
-			undef,
-			[['.gff.gz' => 'tq_cbr']],
+			[['.results' => 'tq_crg']],
 			't',
 			$self,
-			CBR_METADATA,
-			undef
-		],
-		
-		'RNA_TRANSCRIPT_QUANT_CRG'	=>	[
-			'exp',
-			['15b'],
-			undef,
-			[['.gtf' => 'tq_crg']],
-			't',
-			$self,
-			CRG_METADATA,
-			undef
-		],
-		
-		'RNA_JUNCTIONS_CRG'	=>	[
-			'jcn',
-			['15b'],
-			'junctions',
-			undef,
-			undef,
-			undef,
-			CRG_METADATA,
+			CRG_STAR_METADATA,
 			undef
 		],
 	};
@@ -149,6 +92,7 @@ sub insert($$$) {
 	my @batch = ();
 	
 	my %rnaGFFQuantParserConfig = (
+		TabParser::TAG_HAS_HEADER	=>	1,
 		TabParser::TAG_CALLBACK => sub {
 			my(
 				$chro,

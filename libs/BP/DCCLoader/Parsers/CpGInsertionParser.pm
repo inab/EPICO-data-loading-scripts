@@ -133,4 +133,7 @@ sub insert($$$) {
 	}
 }
 
+# This call registers the parser
+BP::DCCLoader::Parsers::_registerParsableFiletypes(__PACKAGE__);
+
 1;

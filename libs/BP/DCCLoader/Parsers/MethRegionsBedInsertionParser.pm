@@ -145,6 +145,9 @@ sub insert($$$) {
 	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],$_[2],'hyper');
 }
 
+# This call registers the parser
+BP::DCCLoader::Parsers::_registerParsableFiletypes(__PACKAGE__);
+
 
 package BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::Hypo;
 
@@ -208,5 +211,8 @@ sub insert($$$) {
 	
 	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],$_[2],'hypo');
 }
+
+# This call registers the parser
+BP::DCCLoader::Parsers::_registerParsableFiletypes(__PACKAGE__);
 
 1;
