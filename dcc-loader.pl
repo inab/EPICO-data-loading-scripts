@@ -7,6 +7,7 @@ use diagnostics;
 use Config::IniFiles;
 use FindBin;
 use lib $FindBin::Bin."/model/schema+tools/lib";
+use lib $FindBin::Bin."/libs";
 
 use Carp;
 use File::Basename;
@@ -26,14 +27,23 @@ use BP::Loader::Mapper::Autoload::Relational;
 use BP::Loader::Mapper::Autoload::Elasticsearch;
 use BP::Loader::Mapper::Autoload::MongoDB;
 
+use BP::DCCLoader::Parsers;
+use BP::DCCLoader::Parsers::CpGInsertionParser;
+use BP::DCCLoader::Parsers::DNASEBedInsertionParser;
+use BP::DCCLoader::Parsers::MACSBedInsertionParser;
+use BP::DCCLoader::Parsers::MethRegionsBedInsertionParser;
+use BP::DCCLoader::Parsers::RNASeqGFFInsertionParser;
+#use BP::DCCLoader::Parsers::RNASeqStarInsertionParser;
+use BP::DCCLoader::Parsers::WigglerInsertionParser;
+
 use TabParser;
 
 use constant DCC_LOADER_SECTION => 'dcc-loader';
 
 use constant {
-	PUBLIC_INDEX	=>	'public.results.index',
-	DATA_FILES_INDEX	=>	'data_files.index',
-	EXPERIMENTS2DATASETS	=>	'experiments2datasets.txt'
+	PUBLIC_INDEX_DEFAULT	=>	'public.results.index',
+	DATA_INDEX_DEFAULT	=>	'data_files.index',
+	EXPERIMENTS2DATASETS_DEFAULT	=>	'experiments2datasets.txt'
 };
 
 use constant PUBLIC_INDEX_COLS => [
@@ -98,6 +108,7 @@ my %GROUPCV = (
 	'NCMLS'	=>	['1'],
 	'NCMLS_CU'	=>	['1','3b'],
 	'MPIMG'	=>	['12d'],
+	'IDIBAPS'	=>	['10']
 );
 
 my %EXPERIMENTCV = (
@@ -119,411 +130,7 @@ my %INSTRUMENT2PLATFORM = (
 	'NextSeq 500'	=>	100,
 );
 
-#####
-# Parser methods
-# --------------
-# Each method must take these parameters
-#	F: A filehandler with the content
-#	analysis_id: The analysis_id for each entry
-#	mapper: A BP::Loader::Mapper instance
-#####
-
-sub macsBedParser($$$);
-
-sub rnaGFFQuantParser($$$);
-
-sub dsHotspotsBedParser($$$);
-
-sub dlatBedHypoMParser($$$);
-sub dlatBedHyperMParser($$$);
-sub __dlatBedParser($$$$);
-
-sub dlatTxtCpGParser($$$);
-
-
-
-use constant UNK_METADATA => {
-	'assembly_version'	=>	1,
-	'program_versions'	=>	[
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'',
-		'url'	=>	'',
-	},
-	'other_analysis_algorithm'	=>	[
-	],
-};
-
-use constant WIGGLER_METADATA => {
-	'assembly_version'	=>	1,
-	'program_versions'	=>	[
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'',
-		'url'	=>	'',
-	},
-	'other_analysis_algorithm'	=>	[
-		{
-			'name'	=>	'WIGGLER',
-			'url'	=>	'https://code.google.com/p/align2rawsignal/'
-		}
-	],
-};
-
-use constant CS_METADATA => {
-	'assembly_version'	=>	1,
-	'program_versions'	=>	[
-		{
-			'program'	=>	'BWA',
-			'version'	=>	'0.5.9',
-		},
-		{
-			'program'	=>	'samtools',
-			'version'	=>	'0.1.18',
-		},
-		{
-			'program'	=>	'phantompeakqualtools',
-			'version'	=>	'1.1',
-		},
-		{
-			'program'	=>	'spp',
-			'version'	=>	'1.11',
-		},
-		{
-			'program'	=>	'macs2',
-			'version'	=>	'2.0.10.20120913',
-		},
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'BWA',
-		'url'	=>	'http://bio-bwa.sourceforge.net/',
-	},
-	'other_analysis_algorithm'	=>	[
-		{
-			'name'	=>	'Samtools',
-			'url'	=>	'http://samtools.sourceforge.net',
-		},
-		{
-			'name'	=>	'PhantomPeakQualTools',
-			'url'	=>	'http://code.google.com/p/phantompeakqualtools/',
-		},
-		{
-			'name'	=>	'Macs2',
-			'url'	=>	'https://pypi.python.org/pypi/MACS2',
-		}
-	],
-};
-
-use constant CBR_METADATA => {
-	'assembly_version'	=>	8,
-	'program_versions'	=>	[
-		{
-			'program'	=>	'Bowtie',
-			'version'	=>	'0.12.8'
-		},
-		{
-			'program'	=>	'MMSEQ',
-			'version'	=>	'1.0.5'
-		}
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'Bowtie',
-		'url'	=>	'http://bowtie-bio.sourceforge.net/index.shtml',
-	},
-	'other_analysis_algorithm'	=>	[
-		{
-			'name'	=>	'MMSEQ',
-			'url'	=>	'https://github.com/eturro/mmseq',
-		}
-	],
-};
-
-use constant CRG_METADATA => {
-	'assembly_version'	=>	1,
-	'program_versions'	=>	[
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'GEMTools library',
-		'url'	=>	'http://github.com/gemtools',
-	},
-	'other_analysis_algorithm'	=>	[
-		{
-			'name'	=>	'Samtools',
-			'url'	=>	'http://samtools.sourceforge.net',
-		},
-		{
-			'name'	=>	'Cufflinks',
-			'url'	=>	'http://cufflinks.cbcb.umd.edu/manual.html#cufflinks_input',
-		},
-		{
-			'name'	=>	'Flux Capacitor',
-			'url'	=>	'http://sammeth.net/confluence/display/FLUX/Home',
-		}
-	],
-};
-
-use constant DS_METADATA => {
-	'assembly_version'	=>	1,
-	'program_versions'	=>	[
-		{
-			'program'	=>	'BWA',
-			'version'	=>	'0.5.9'
-		},
-		{
-			'program'	=>	'samtools',
-			'version'	=>	'0.1.18'
-		},
-		{
-			'program'	=>	'phantompeakqualtools',
-			'version'	=>	'1.1'
-		},
-		{
-			'program'	=>	'spp',
-			'version'	=>	'1.11'
-		},
-		{
-			'program'	=>	'macs2',
-			'version'	=>	'2.0.10.20120913'
-		},
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'BWA',
-		'url'	=>	'http://bio-bwa.sourceforge.net/',
-	},
-	'other_analysis_algorithm'	=>	[
-		{
-			'name'	=>	'samtools',
-			'url'	=>	'http://samtools.sourceforge.net/',
-		},
-		{
-			'name'	=>	'Hotspot',
-			'url'	=>	'http://www.uwencode.org/proj/hotspot-ptih/',
-		},
-		{
-			'name'	=>	'Bedops',
-			'url'	=>	'http://code.google.com/p/bedops/',
-		},
-	],
-};
-
-use constant METH_CPG_METADATA => {
-	'assembly_version'	=>	1,
-	'program_versions'	=>	[
-		{
-			'program'	=>	'GEM',
-			'version'	=>	'1.242',
-		},
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'GEM',
-		'url'	=>	'http://big.crg.cat/services/gem_genome_multi_tool_library',
-	},
-	'other_analysis_algorithm'	=>	[
-	],
-	'mr_type'	=>	'cpg',
-};
-
-use constant METH_HYPER_METADATA => {
-	'assembly_version'	=>	1,
-	'program_versions'	=>	[
-		{
-			'program'	=>	'GEM',
-			'version'	=>	'1.242',
-		},
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'GEM',
-		'url'	=>	'http://big.crg.cat/services/gem_genome_multi_tool_library',
-	},
-	'other_analysis_algorithm'	=>	[
-	],
-	'mr_type'	=>	'hyper',
-};
-
-use constant METH_HYPO_METADATA => {
-	'assembly_version'	=>	1,
-	'program_versions'	=>	[
-		{
-			'program'	=>	'GEM',
-			'version'	=>	'1.242',
-		},
-	],
-	'alignment_algorithm'	=>	{
-		'name'	=>	'GEM',
-		'url'	=>	'http://big.crg.cat/services/gem_genome_multi_tool_library',
-	},
-	'other_analysis_algorithm'	=>	[
-	],
-	'mr_type'	=>	'hypo',
-};
-
-
-
-
-use constant {
-	F_DOMAIN	=>	0,
-	F_ANALYSIS_GROUP_ID	=>	1,
-	F_POSTFIX	=>	2,
-	F_PATTERN_POSTFIX	=>	3,
-	F_PRIMARY	=>	4,
-	F_PARSER	=>	5,
-	F_METADATA	=>	6,
-	F_PARENT_POSTFIX	=>	7,
-};
-
-use constant {
-	CNAG_CPGS_POSTFIX	=>	'bs_cpg',
-	CNAG_CYTOSINES_POSTFIX	=>	'bs_c'
-};
-
-# 0. The concept domain
-# 1. The group
-# 2. The postfix to the experiment_id in order to build the analysis_id
-#
-my %FILETYPE2ANAL = (
-	'CS_BROAD_MACS2'	=>	[
-		'pdna',
-		['1'],
-		undef,
-		[['bed.gz' => 'cs_broad_peaks']],
-		'p',
-		\&macsBedParser,
-		CS_METADATA,
-		undef
-	],
-	
-	'CS_MACS2'	=>	[
-		'pdna',
-		['1'],
-		undef,
-		[['bed.gz' => 'cs_peaks']],
-		'p',
-		\&macsBedParser,
-		CS_METADATA,
-		undef
-	],
-	
-	'CS_WIGGLER'	=>	[
-		'pdna',
-		['1'],
-		'cs_wiggler',
-		undef,
-		undef,
-		undef,
-		WIGGLER_METADATA,
-		undef
-	],
-	
-	'RNA_GENE_QUANT_CBR'	=>	[
-		'exp',
-		['3b'],
-		undef,
-		[['.gff.gz' => 'gq_cbr']],
-		'g',
-		\&rnaGFFQuantParser,
-		CBR_METADATA,
-		undef
-	],
-	
-	'RNA_GENE_QUANT_CRG'	=>	[
-		'exp',
-		['15b'],
-		undef,
-		[['.gff' => 'gq_crg']],
-		'g',
-		\&rnaGFFQuantParser,
-		CRG_METADATA,
-		undef
-	],
-	
-	'RNA_TRANSCRIPT_QUANT_CBR'	=>	[
-		'exp',
-		['3b'],
-		undef,
-		[['.gff.gz' => 'tq_cbr']],
-		't',
-		\&rnaGFFQuantParser,
-		CBR_METADATA,
-		undef
-	],
-	
-	'RNA_TRANSCRIPT_QUANT_CRG'	=>	[
-		'exp',
-		['15b'],
-		undef,
-		[['.gtf' => 'tq_crg']],
-		't',
-		\&rnaGFFQuantParser,
-		CRG_METADATA,
-		undef
-	],
-	
-	'RNA_JUNCTIONS_CRG'	=>	[
-		'jcn',
-		['15b'],
-		'junctions',
-		undef,
-		undef,
-		undef,
-		CRG_METADATA,
-		undef
-	],
-	
-	'DS_HOTSPOT'	=>	[
-		'rreg',
-		['8'],
-		'ds_hotspots',
-		[['peaks' => 'ds_hotspots_peaks']],
-		'p',
-		\&dsHotspotsBedParser,
-		DS_METADATA,
-		undef
-	],
-	
-	'DS_WIGGLER'	=>	[
-		'rreg',
-		['8'],
-		'ds_wiggler',
-		undef,
-		undef,
-		undef,
-		WIGGLER_METADATA,
-		undef
-	],
-	
-	'BS_HYPER_METH_BED_CNAG'	=>	[
-		'dlat',
-		['11'],
-		'bs_hyper',
-		undef,
-		'mr',
-		\&dlatBedHyperMParser,
-		METH_HYPER_METADATA,
-		CNAG_CPGS_POSTFIX
-	],
-	
-	'BS_HYPO_METH_BED_CNAG'	=>	[
-		'dlat',
-		['11'],
-		'bs_hypo',
-		undef,
-		'mr',
-		\&dlatBedHypoMParser,
-		METH_HYPO_METADATA,
-		undef	#CNAG_CPGS_POSTFIX
-	],
-	
-#	'BS_METH_TABLE_CYTOSINES_CNAG'	=>	[
-#		'dlat',
-#		['11'],
-#		undef,
-#		[['cpgs.bs_call' => +CNAG_CPGS_POSTFIX]],
-#		'cpg',
-#		\&dlatTxtCpGParser,
-#		METH_CPG_METADATA,
-#		undef	#CNAG_CYTOSINES_POSTFIX
-#	],
-);
+my $p_FILETYPE2ANAL = BP::DCCLoader::Parsers->getParsableFiletypes();
 
 ######
 # Shouldn't be global variables, but we need them in the different callbacks
@@ -625,15 +232,15 @@ sub data_files_callback {
 	
 	if(exists($experiments{$experiment_id})) {
 		# And this is the analysis metadata
-		if(exists($FILETYPE2ANAL{$file_type})) {
-			my $ftype = $FILETYPE2ANAL{$file_type};
-			my $analDomain = $ftype->[F_DOMAIN];
+		if(exists($p_FILETYPE2ANAL->{$file_type})) {
+			my $ftype = $p_FILETYPE2ANAL->{$file_type};
+			my $analDomain = $ftype->[BP::DCCLoader::Parsers::F_DOMAIN];
 			
 			# Analysis id building
 			my $an_postfix = undef;
 			
-			if(defined($ftype->[F_PATTERN_POSTFIX])) {
-				foreach my $p_pat_post (@{$ftype->[F_PATTERN_POSTFIX]}) {
+			if(defined($ftype->[BP::DCCLoader::Parsers::F_PATTERN_POSTFIX])) {
+				foreach my $p_pat_post (@{$ftype->[BP::DCCLoader::Parsers::F_PATTERN_POSTFIX]}) {
 					my($pattern,$postfix)=@{$p_pat_post};
 					
 					if(index($remote_file_path,$pattern)!=-1) {
@@ -643,21 +250,21 @@ sub data_files_callback {
 				}
 			}
 			
-			$an_postfix = $ftype->[F_POSTFIX]  unless(defined($an_postfix));
+			$an_postfix = $ftype->[BP::DCCLoader::Parsers::F_POSTFIX]  unless(defined($an_postfix));
 			
 			# No postfix, no processing!!!!
 			if(defined($an_postfix)) {
 				my $analysis_id = $experiment_id.'_'.$an_postfix;
 				
 				unless(exists($reg_analysis{$analysis_id})) {
-					my $f_metadata = $ftype->[F_METADATA];
+					my $f_metadata = $ftype->[BP::DCCLoader::Parsers::F_METADATA];
 					$f_metadata = {}  unless(defined($f_metadata));
 					
 					my %analysis = (
 						'analysis_id'	=>	$analysis_id,
 						'experiment_id'	=>	$experiment_id,
-						'analysis_group_id'	=>	$ftype->[F_ANALYSIS_GROUP_ID],
-						'data_status'	=>	defined($ftype->[F_PRIMARY])?2:0,
+						'analysis_group_id'	=>	$ftype->[BP::DCCLoader::Parsers::F_ANALYSIS_GROUP_ID],
+						'data_status'	=>	defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])?2:0,
 						'assembly_version'	=>	$f_metadata->{assembly_version},
 						'ensembl_version'	=>	$ensembl_version,
 						'gencode_version'	=>	$gencode_version,
@@ -665,8 +272,8 @@ sub data_files_callback {
 					$analysis{NSC} = $NSC  if($NSC ne '-');
 					$analysis{RSC} = $RSC  if($RSC ne '-');
 					@analysis{keys(%{$f_metadata})} = values(%{$f_metadata});
-					if(defined($ftype->[F_PARENT_POSTFIX])) {
-						$analysis{'base_analysis_id'} = $analysis_id.'_'.$ftype->[F_PARENT_POSTFIX];
+					if(defined($ftype->[BP::DCCLoader::Parsers::F_PARENT_POSTFIX])) {
+						$analysis{'base_analysis_id'} = $analysis_id.'_'.$ftype->[BP::DCCLoader::Parsers::F_PARENT_POSTFIX];
 					}
 					
 					# Last, register it!
@@ -676,10 +283,10 @@ sub data_files_callback {
 				}
 				
 				# Preparing the field
-				if(defined($ftype->[F_PRIMARY])) {
+				if(defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])) {
 					$primary_anal{$analDomain} = []  unless(exists($primary_anal{$analDomain}));
 					
-					push(@{$primary_anal{$analDomain}},[$analysis_id,$ftype->[F_PRIMARY],$ftype->[F_PARSER],$remote_file_path]);
+					push(@{$primary_anal{$analDomain}},[$analysis_id,$ftype->[BP::DCCLoader::Parsers::F_PRIMARY],$ftype->[BP::DCCLoader::Parsers::F_PARSER],$remote_file_path]);
 				}
 			}
 		}
@@ -895,349 +502,6 @@ sub public_results_callback {
 }
 
 #####
-# Parser method bodies
-# --------------
-# Each method must take these parameters
-#	F: A filehandler with the content
-#	analysis_id: The analysis_id for each entry
-#	mapper: A BP::Loader::Mapper instance
-#####
-
-sub macsBedParser($$$) {
-	my($F,$analysis_id,$mapper) = @_;
-	
-	# UGLY
-	my $BMAX = $mapper->{'batch-size'};
-	
-	my $numBatch = 0;
-	my @batch = ();
-	
-	my %macsBedParserConfig = (
-		TabParser::TAG_CALLBACK => sub {
-			my(
-				$chro,
-				$chromosome_start,
-				$chromosome_end,
-				$protein_dna_interaction_id,
-				undef,
-				undef,
-				$fold_enrichment,	# fold_enrichment
-				$log10_pvalue, # -log10(pvalue)
-				$log10_qvalue, # -log10(qvalue)
-			) = @_;
-			
-			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
-			
-			$chromosome = 'MT'  if($chromosome eq 'M');
-			
-			my $protein_stable_id = ($protein_dna_interaction_id =~ /^[^.]+\.([^.]+)/)?$1:'';
-			
-			
-			my %entry = (
-				'analysis_id'	=>	$analysis_id,
-				'protein_dna_interaction_id'	=>	$protein_dna_interaction_id,
-				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
-				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
-				'rank'	=>	[
-					{
-						'rank'	=>	'fold_enrichment',
-						'value'	=>	$fold_enrichment
-					}
-				],
-				'protein_stable_id'	=>	$protein_stable_id,
-				'log10_pvalue'	=>	$log10_pvalue,
-				'log10_qvalue'	=>	$log10_qvalue,
-			);
-			
-			push(@batch,\%entry);
-			$numBatch++;
-			
-			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
-			}
-		},
-	);
-	TabParser::parseTab($F,%macsBedParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
-}
-
-sub rnaGFFQuantParser($$$) {
-	my($F,$analysis_id,$mapper) = @_;
-	
-	# UGLY
-	my $BMAX = $mapper->{'batch-size'};
-	
-	my $numBatch = 0;
-	my @batch = ();
-	
-	my %rnaGFFQuantParserConfig = (
-		TabParser::TAG_CALLBACK => sub {
-			my(
-				$chro,
-				undef, # source
-				$feature, # feature
-				$chromosome_start,
-				$chromosome_end,
-				undef,
-				$chromosome_strand,
-				undef, # frame
-				$attributes_str, # attributes following .ace format
-			) = @_;
-			
-			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
-			
-			$chromosome = 'MT'  if($chromosome eq 'M');
-			
-			my %attributes = ();
-			
-			my @tokens = split(/\s*;\s*/,$attributes_str);
-			foreach my $token (@tokens) {
-				my($key,$value) = split(/\s+/,$token,2);
-				
-				# Removing double quotes
-				$value =~ tr/"//d;
-				
-				$attributes{$key} = $value;
-			}
-			
-			
-			my %entry = (
-				'analysis_id'	=>	$analysis_id,
-				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start,
-				'chromosome_end'	=>	$chromosome_end,
-				'chromosome_strand'	=>	(($chromosome_strand eq '-')?-1:1),
-				'normalized_read_count'	=>	$attributes{'RPKM'},
-				'raw_read_count'	=>	int($attributes{'reads'} + 0.5),
-				'is_annotated'	=>	1,
-			);
-			$entry{'gene_stable_id'} = $attributes{'gene_id'}  if(exists($attributes{'gene_id'}));
-			$entry{'transcript_stable_id'} = $attributes{'transcript_id'}  if($feature eq 'transcript' && exists($attributes{'transcript_id'}));
-			
-			push(@batch,\%entry);
-			$numBatch++;
-			
-			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
-			}
-		},
-	);
-	TabParser::parseTab($F,%rnaGFFQuantParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
-}
-
-sub dsHotspotsBedParser($$$) {
-	my($F,$analysis_id,$mapper) = @_;
-	
-	# UGLY
-	my $BMAX = $mapper->{'batch-size'};
-	
-	my $numBatch = 0;
-	my @batch = ();
-	
-	my %dsHotspotsBedParserConfig = (
-		TabParser::TAG_CALLBACK => sub {
-			my(
-				$chro,
-				$chromosome_start,
-				$chromosome_end,
-				$zscore,
-				$zscore_peak,
-			) = @_;
-			
-			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
-			
-			$chromosome = 'MT'  if($chromosome eq 'M');
-			
-			my %entry = (
-				'analysis_id'	=>	$analysis_id,
-				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
-				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
-				'z_score'	=>	defined($zscore_peak)?$zscore_peak:$zscore,
-			);
-			
-			push(@batch,\%entry);
-			$numBatch++;
-			
-			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
-			}
-		},
-	);
-	TabParser::parseTab($F,%dsHotspotsBedParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
-}
-
-sub dlatBedHyperMParser($$$) {
-	return __dlatBedParser($_[0],$_[1],$_[2],'hyper');
-}
-
-sub dlatBedHypoMParser($$$) {
-	return __dlatBedParser($_[0],$_[1],$_[2],'hypo');
-}
-
-sub __dlatBedParser($$$$) {
-	my($F,$analysis_id,$mapper,$hyperhypo) = @_;
-	
-	# UGLY
-	my $BMAX = $mapper->{'batch-size'};
-	
-	my $numBatch = 0;
-	my @batch = ();
-	
-	my %dlatBedParserConfig = (
-		TabParser::TAG_CALLBACK => sub {
-			my(
-				$chro,
-				$chromosome_start,
-				$chromosome_end,
-				undef,	# Size of region in base pairs
-				$avg_meth_level,	# Average methylation level in region
-				undef,	# Number of CpGs in region
-				$d_lated_reads,	# Median number of non-converted reads at CpGs in region
-				$converted_reads,	# Median number of converted reads at CpGs in region
-				$total_reads,	# Median number of total reads at CpGs in region
-				undef,	# Island/Shelf/Shore (union of CpG Island annotations for all CpGs in region)
-				undef,	# refGene annotation (union of refGene  annotations for all CpGs in region)
-			) = @_;
-			
-			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
-			
-			$chromosome = 'MT'  if($chromosome eq 'M');
-			
-			$chromosome_start = $chromosome_start+1;	# Bed holds the data 0-based
-			my $d_lated_fragment_id = $hyperhypo.'|'.$chro.'_'.$chromosome_start.'_'.$chromosome_end;
-			
-			my %entry = (
-				'analysis_id'	=>	$analysis_id,
-				'd_lated_fragment_id'	=>	$d_lated_fragment_id,
-				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start,
-				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
-				'total_reads'	=>	$total_reads,
-				'c_total_reads'	=>	($d_lated_reads + $converted_reads),
-				'd_lated_reads'	=>	$d_lated_reads,
-				'meth_level'	=>	$avg_meth_level
-				
-			);
-			
-			push(@batch,\%entry);
-			$numBatch++;
-			
-			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
-			}
-		},
-	);
-	TabParser::parseTab($F,%dlatBedParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
-}
-
-sub dlatTxtCpGParser($$$) {
-	my($F,$analysis_id,$mapper) = @_;
-	
-	# UGLY
-	my $BMAX = $mapper->{'batch-size'};
-	
-	my $numBatch = 0;
-	my @batch = ();
-	
-	my %dlatTxtCpGParserConfig = (
-		TabParser::TAG_CALLBACK => sub {
-
-			my(
-				$chro,			# Chromosome
-				$chromosome_start,	# Position of CC (offset 1)
-				$probability,		# Phred scaled probability of genotype *not* being CC/GG
-				$avg_meth_level,	# Methylation probability (combined estimate from the weighted average of the MLEs at the two positions)
-				undef,			# Standard deviation of methylation probability (from weighted average)
-				$d_lated_reads,		# No. of non-converted C reads (sum of counts at both positions)
-				$converted_reads,	# No. of converted C reads (idem)
-				undef,			# Total reads supporting genotype call (idem)
-				$total_reads,		# Total reads (idem)
-			) = @_;
-			
-			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
-			
-			$chromosome = 'MT'  if($chromosome eq 'M');
-			
-			my $chromosome_end = $chromosome_start+1;	# As it is a CpG, it is one more
-			my $d_lated_fragment_id = 'cpg|'.$chro.'_'.$chromosome_start.'_'.$chromosome_end;
-			
-			
-			my %entry = (
-				'analysis_id'	=>	$analysis_id,
-				#'d_lated_fragment_id'	=>	$d_lated_fragment_id,
-				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start,	# This txt had the coordinates 1-based
-				#'chromosome_end'	=>	$chromosome_end,
-				'total_reads'	=>	$total_reads,
-				'c_total_reads'	=>	($d_lated_reads + $converted_reads),
-				'd_lated_reads'	=>	$d_lated_reads,
-				'meth_level'	=>	$avg_meth_level,
-				'probability'	=>	$probability
-			);
-			
-			push(@batch,\%entry);
-			$numBatch++;
-			
-			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
-			}
-		},
-	);
-	TabParser::parseTab($F,%dlatTxtCpGParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
-}
-
-#####
 # Method bodies
 #####
 sub cachedGet($$$) {
@@ -1420,6 +684,28 @@ if(scalar(@ARGV)>=2) {
 		Carp::croak("Configuration file $iniFile must have 'metadata-path'");
 	}
 	
+	my $publicIndex;
+	if($ini->exists(DCC_LOADER_SECTION,'public-index-file')) {
+		$publicIndex = $ini->val(DCC_LOADER_SECTION,'public-index-file');
+	} else {
+		$publicIndex = PUBLIC_INDEX_DEFAULT;
+	}
+	
+	my $dataIndex;
+	if($ini->exists(DCC_LOADER_SECTION,'data-index-file')) {
+		$dataIndex = $ini->val(DCC_LOADER_SECTION,'data-index-file');
+	} else {
+		$dataIndex = DATA_INDEX_DEFAULT;
+	}
+	
+	my $exp2datasets;
+	if($ini->exists(DCC_LOADER_SECTION,'exp2datasets-file')) {
+		$exp2datasets = $ini->val(DCC_LOADER_SECTION,'exp2datasets-file');
+	} else {
+		$exp2datasets = EXPERIMENTS2DATASETS_DEFAULT;
+	}
+	
+	
 	# First, explicitly create the caching directory
 	File::Path::make_path($cachingDir);
 	
@@ -1440,11 +726,13 @@ if(scalar(@ARGV)>=2) {
 		Carp::croak("Unknown protocol $protocol");
 	}
 	
-	my $localIndexPath = cachedGet($bpDataServer,$indexPath.'/'.PUBLIC_INDEX,$cachingDir);
-	my $localDataFilesIndexPath = cachedGet($bpDataServer,$indexPath.'/'.DATA_FILES_INDEX,$cachingDir);
-	my $localExp2Datasets = cachedGet($bpDataServer,$indexPath.'/'.EXPERIMENTS2DATASETS,$cachingDir);
+	my $localIndexPath = cachedGet($bpDataServer,$indexPath.'/'.$publicIndex,$cachingDir);
+	my $localDataFilesIndexPath = cachedGet($bpDataServer,$indexPath.'/'.$dataIndex,$cachingDir);
+	my $localExp2Datasets = cachedGet($bpDataServer,$indexPath.'/'.$exp2datasets,$cachingDir);
 	
-	if(defined($localIndexPath) && defined($localExp2Datasets)) {
+	if(defined($localIndexPath)) {
+		Carp::carp("WARNING: Unable to fetch experiments to datasets correspondence from $indexPath (host $host)")  unless(defined($localExp2Datasets));
+
 		# Try getting a connection to 
 		
 		# Let's parse the model
@@ -1480,21 +768,25 @@ if(scalar(@ARGV)>=2) {
 		}
 		
 		# First, these correspondences experiment <=> EGA needed by next parse
-		print "Parsing ",EXPERIMENTS2DATASETS,"...\n";
-		if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
-			my %e2dConfig = (
-				TabParser::TAG_HAS_HEADER	=> 1,
-				TabParser::TAG_CONTEXT	=> \%exp2EGA,
-				TabParser::TAG_CALLBACK => \&experiments_to_datasets_callback,
-			);
-			$e2dConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
-			TabParser::parseTab($E2D,%e2dConfig);
-			close($E2D);
+		if(defined($localExp2Datasets)) {
+			print "Parsing ",$exp2datasets,"...\n";
+			if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
+				my %e2dConfig = (
+					TabParser::TAG_HAS_HEADER	=> 1,
+					TabParser::TAG_CONTEXT	=> \%exp2EGA,
+					TabParser::TAG_CALLBACK => \&experiments_to_datasets_callback,
+				);
+				$e2dConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
+				TabParser::parseTab($E2D,%e2dConfig);
+				close($E2D);
+			} else {
+				Carp::croak("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
+			}
 		} else {
-			Carp::croak("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
+			Carp::carp("WARNING: $exp2datasets unavailable. raw_data_accession subfields will be empty");
 		}
 		
-		print "Parsing ",PUBLIC_INDEX,"...\n";
+		print "Parsing ",$publicIndex,"...\n";
 		# Now, let's parse the public.site.index, the backbone
 		if(open(my $PSI,'<:encoding(UTF-8)',$localIndexPath)) {
 			my %indexConfig = (
@@ -1509,7 +801,7 @@ if(scalar(@ARGV)>=2) {
 			Carp::croak("Unable to parse $localIndexPath, the main metadata holder");
 		}
 
-		print "Parsing ",DATA_FILES_INDEX,"...\n";
+		print "Parsing ",$dataIndex,"...\n";
 		# Now, let's parse the data_files.index, the backbone
 		if(open(my $DFI,'<:encoding(UTF-8)',$localDataFilesIndexPath)) {
 			my %indexConfig = (
@@ -1669,7 +961,7 @@ if(scalar(@ARGV)>=2) {
 									# And here the different bulk load
 									if(exists($primary_anal{$analDomain})) {
 										foreach my $p_primary (@{$primary_anal{$analDomain}}) {
-											my($analysis_id,$conceptName,$method,$remote_file) = @{$p_primary};
+											my($analysis_id,$conceptName,$instance,$remote_file) = @{$p_primary};
 											print "\t* ",$corrConcepts{$conceptName}->concept->fullname," ($remote_file)...\n";
 											
 											$mapper->setDestination($corrConcepts{$conceptName});
@@ -1695,7 +987,7 @@ if(scalar(@ARGV)>=2) {
 													if(open(my $F,$f_mode,@f_params)) {
 														unless($testmode) {
 															eval {
-																$method->($F,$analysis_id,$mapper);
+																$instance->insert($F,$analysis_id,$mapper);
 															};
 															
 															if($@) {
@@ -1728,13 +1020,11 @@ if(scalar(@ARGV)>=2) {
 		}
 	} elsif(!defined($localIndexPath)) {
 		Carp::croak("FATAL ERROR: Unable to fetch index from $indexPath (host $host)");
-	} else {
-		Carp::croak("FATAL ERROR: Unable to fetch experiments to datasets correspondence from $indexPath (host $host)");
 	}
 	
 	$bpDataServer->disconnect()  if($bpDataServer->can('disconnect'));
 	$bpDataServer->quit()  if($bpDataServer->can('quit'));
 	
 } else {
-	print STDERR "Usage: $0 [-t] iniFile cachingDir [",join('|','sdata',keys(%DOMAIN2EXPANAL)),"]\n"
+	print STDERR "Usage: $0 [-t] iniFile cachingDir [",join('|','sdata',sort(keys(%DOMAIN2EXPANAL))),"]\n"
 }
