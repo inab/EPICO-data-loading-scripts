@@ -21,25 +21,35 @@ use constant {
 };
 
 {
-my %FILETYPE2ANAL = ();
+my @PARSERS = ();
 
-sub _registerParsableFiletypes($) {
-	foreach my $clazz (@_) {
-		my $instance = $clazz->new();
-		my $p_parsable = $instance->getParsingFeatures();
-		
-		foreach my $newtype (keys(%{$p_parsable})) {
-			if(exists($FILETYPE2ANAL{$newtype})) {
-				Carp::carp("WARNING: Trying to register twice the filetype $newtype while loading $clazz. Ignoring...");
-			} else {
-				$FILETYPE2ANAL{$newtype} = $p_parsable->{$newtype};
-			}
-		}
-	}
+sub _registerParsableFiletypes(@) {
+	push(@PARSERS,@_);
 }
 
+my %FILETYPE2ANAL = ();
+
 # It returns the registered parsable filetypes
-sub getParsableFiletypes() {
+sub getParsableFiletypes(@) {
+	my $class = shift;
+	
+	if(scalar(@PARSERS) > 0) {
+		foreach my $clazz (@PARSERS) {
+			my $instance = $clazz->new(@_);
+			my $p_parsable = $instance->getParsingFeatures();
+			
+			foreach my $newtype (keys(%{$p_parsable})) {
+				if(exists($FILETYPE2ANAL{$newtype})) {
+					Carp::carp("WARNING: Trying to register twice the filetype $newtype while loading $clazz. Ignoring...");
+				} else {
+					$FILETYPE2ANAL{$newtype} = $p_parsable->{$newtype};
+				}
+			}
+		}
+		
+		@PARSERS = ();
+	}
+	
 	return \%FILETYPE2ANAL;
 }
 
