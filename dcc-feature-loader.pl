@@ -9,13 +9,12 @@ use diagnostics;
 use Config::IniFiles;
 use FindBin;
 use lib $FindBin::Bin."/model/schema+tools/lib";
+use lib $FindBin::Bin."/libs";
 
 use Carp;
 use File::Basename;
-use File::Path;
 use File::Spec;
 use IO::Handle;
-use LWP::UserAgent;
 use Net::FTP::AutoReconnect;
 use URI;
 
@@ -26,6 +25,8 @@ use BP::Loader::Mapper;
 use BP::Loader::Mapper::Autoload::Relational;
 use BP::Loader::Mapper::Autoload::Elasticsearch;
 use BP::Loader::Mapper::Autoload::MongoDB;
+
+use BP::DCCLoader::WorkingDir;
 
 use TabParser;
 use SQL::Parser;
@@ -48,8 +49,6 @@ use constant {
 	ANONYMOUS_PASS	=> 'guest@',
 };
 
-sub cachedGet($$$);
-
 sub parseSeqRegions($$$);
 sub parseENS($$$$$$$$);
 sub parseXREF($$$$$);
@@ -59,36 +58,6 @@ sub parseReactomeInteractions($$$$$);
 #####
 # Method bodies
 #####
-sub cachedGet($$$) {
-	my($ftpServer,$remotePath,$cachingDir)=@_;
-	
-	my $filedate = $ftpServer->mdtm($remotePath);
-	my $filesize = $ftpServer->size($remotePath);
-	
-	my $localPath = File::Spec->catfile($cachingDir,$remotePath);
-	my $localBasePath = File::Basename::basename($remotePath);
-	my $localRelDir = File::Basename::dirname($remotePath);
-	my $localDir = File::Spec->catdir($cachingDir,$localRelDir);
-	
-	my $mirrored = undef;
-	if(-f $localPath) {
-		my($localsize,$localdate) = ( stat($localPath) )[7,9];
-		$mirrored = $filedate == $localdate && $filesize == $localsize;
-	}
-	
-	unless($mirrored) {
-		$remotePath = '/'.$remotePath  unless(substr($remotePath,0,1) eq '/');
-		File::Path::make_path($localDir);
-		#print STDERR join(" -=- ",$remotePath,$cachingDir,$localPath,$localBasePath,$localRelDir,$localDir),"\n";
-		my $targetLocalPath = $localPath;
-		$localPath = $ftpServer->get($remotePath,$localPath);
-		print STDERR "DEBUGFTP: ($remotePath -> $targetLocalPath) ".$ftpServer->message."\n"  unless(defined($localPath));
-		utime($filedate,$filedate,$localPath)  if(defined($localPath));
-	}
-	
-	return $localPath;
-}
-
 sub parseSeqRegions($$$) {
 	my($payload,$seq_region_id,$name) = @_;
 	
@@ -488,18 +457,14 @@ if(scalar(@ARGV)>=2) {
 	}
 	
 	# First, explicitly create the caching directory
-	File::Path::make_path($cachingDir);
+	my $workingDir = BP::DCCLoader::WorkingDir->new($cachingDir);
 	
 	# Fetching HTTP resources
 	print "Connecting to $reactome_http_base...\n";
 	my $reactome_bundle_uri = $reactome_http_base->clone();
 	$reactome_bundle_uri->path_segments($reactome_http_base->path_segments(),$reactome_bundle_file);
 	
-	my $reactome_bundle_local = File::Spec->catfile($cachingDir,$reactome_bundle_file);
-	my $ua = LWP::UserAgent->new();
-	my $res = $ua->mirror($reactome_bundle_uri->as_string,$reactome_bundle_local);
-	
-	Carp::croak("FATAL ERROR: Unable to fetch Reactome bundle $reactome_bundle_file from $reactome_http_base. Reason: ".$res->status_line)  unless($res->is_success || $res->is_redirect);
+	my $reactome_bundle_local = $workingDir->mirror($reactome_bundle_uri);
 	
 	# Fetching FTP resources
 	print "Connecting to $ensembl_ftp_base...\n";
@@ -513,11 +478,11 @@ if(scalar(@ARGV)>=2) {
 	
 	my $ensemblPath = $ensembl_ftp_base->path;
 	
-	my $localSQLFile = cachedGet($ftpServer,$ensemblPath.'/'.$ensembl_sql_file,$cachingDir);
-	my $localSeqRegion = cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_SEQ_REGION_FILE,$cachingDir);
-	my $localGenes = cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_GENE_FILE,$cachingDir);
-	my $localTranscripts = cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_TRANSCRIPT_FILE,$cachingDir);
-	my $localXref = cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_XREF_FILE,$cachingDir);
+	my $localSQLFile = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.$ensembl_sql_file);
+	my $localSeqRegion = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_SEQ_REGION_FILE);
+	my $localGenes = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_GENE_FILE);
+	my $localTranscripts = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_TRANSCRIPT_FILE);
+	my $localXref = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_XREF_FILE);
 	
 	Carp::croak("FATAL ERROR: Unable to fetch files from $ensemblPath (host $ensemblHost)")  unless(defined($localSQLFile) && defined($localSeqRegion) && defined($localGenes) && defined($localTranscripts) && defined($localXref));
 	
@@ -533,7 +498,7 @@ if(scalar(@ARGV)>=2) {
 	
 	my $gencodePath = $gencode_ftp_base->path();
 	
-	my $localGTF = cachedGet($ftpServer,$gencodePath.'/'.$gencode_gtf_file,$cachingDir);
+	my $localGTF = $workingDir->cachedGet($ftpServer,$gencodePath.'/'.$gencode_gtf_file);
 	
 	Carp::croak("FATAL ERROR: Unable to fetch files from $gencodePath (host $gencodeHost)")  unless(defined($localGTF));
 		
