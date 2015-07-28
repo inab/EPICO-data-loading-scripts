@@ -108,7 +108,7 @@ sub new(;$$) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
-	$self = $class->SUPER::new()  unless(ref($self));
+	$self = $class->SUPER::new(@_)  unless(ref($self));
 	
 	return $self;
 }
@@ -175,7 +175,7 @@ sub new(;$$) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
-	$self = $class->SUPER::new()  unless(ref($self));
+	$self = $class->SUPER::new(@_)  unless(ref($self));
 	
 	return $self;
 }

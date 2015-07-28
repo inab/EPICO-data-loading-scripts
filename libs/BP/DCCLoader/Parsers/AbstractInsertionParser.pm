@@ -13,7 +13,12 @@ sub new() {
 	my($facet)=shift;
 	my($class)=ref($facet) || $facet;
 	
-	return bless({},$class);
+	my $ref = shift;
+	my %href = ();
+	
+	%href = %{$ref}  if(ref($ref) eq 'HASH');
+	
+	return bless(\%href,$class);
 }
 
 # A template of metadata
