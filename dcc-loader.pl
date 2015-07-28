@@ -11,8 +11,8 @@ use lib $FindBin::Bin."/libs";
 
 use Carp;
 use File::Basename;
-use File::Path;
 use File::Spec;
+# Give autoflush to STDOUT and STDERR
 use IO::Handle;
 use Net::FTP::AutoReconnect;
 #use Net::SFTP::Foreign 1.76;
@@ -35,6 +35,8 @@ use BP::DCCLoader::Parsers::MethRegionsBedInsertionParser;
 use BP::DCCLoader::Parsers::RNASeqGFFInsertionParser;
 #use BP::DCCLoader::Parsers::RNASeqStarInsertionParser;
 use BP::DCCLoader::Parsers::WigglerInsertionParser;
+
+use BP::DCCLoader::WorkingDir;
 
 use TabParser;
 
@@ -172,14 +174,15 @@ my %cellSpecimenTerm = ();
 my %cellPurifiedTerm = ();
 
 # Parameters needed
+# Either a Net::FTP or Net::FTP::AutoReconnect instance
 my $bpDataServer = undef;
 my $metadataPath = undef;
-my $cachingDir = undef;
+# A BP::DCCLoader::WorkingDir instance
+my $workingDir = undef;
 
 #####
 # Method prototypes
 #####
-sub cachedGet($$$);
 sub parseIHECsample($$$$);
 sub parseIHECexperiment($$$$);
 
@@ -399,7 +402,7 @@ sub public_results_callback {
 		
 		Carp::croak("Undefined specimen term for $specimen_id!!!!")  unless(defined($specimen_term));
 		
-		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$cachingDir);
+		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$workingDir);
 		my %specimen = (
 			'specimen_id'	=>	$specimen_id,
 			'tissue_type'	=>	$tissue_type,
@@ -424,7 +427,7 @@ sub public_results_callback {
 	}
 	
 	unless(exists($samples{$sample_id})) {
-		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$cachingDir)  unless(defined($p_IHECsample));
+		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$workingDir)  unless(defined($p_IHECsample));
 		
 		my $purified_cell_type = undef;
 
@@ -465,7 +468,7 @@ sub public_results_callback {
 		unless(exists($experiments{$experiment_id})) {
 			my $labexp = $EXPERIMENTCV{$library_strategy};
 			
-			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($bpDataServer,$metadataPath,$experiment_id,$cachingDir);
+			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($bpDataServer,$metadataPath,$experiment_id,$workingDir);
 			
 			my %features = map { $_ => { 'feature' => $_ , 'value' => $p_IHECexperiment->{$_}[0], 'units' => $p_IHECexperiment->{$_}[1] } } keys(%{$p_IHECexperiment});
 			
@@ -504,42 +507,12 @@ sub public_results_callback {
 #####
 # Method bodies
 #####
-sub cachedGet($$$) {
-	my($bpDataServer,$remotePath,$cachingDir)=@_;
-	
-	my $filedate = $bpDataServer->mdtm($remotePath);
-	my $filesize = $bpDataServer->size($remotePath);
-	
-	my $localPath = File::Spec->catfile($cachingDir,$remotePath);
-	my $localBasePath = File::Basename::basename($remotePath);
-	my $localRelDir = File::Basename::dirname($remotePath);
-	my $localDir = File::Spec->catdir($cachingDir,$localRelDir);
-	
-	my $mirrored = undef;
-	if(-f $localPath) {
-		my($localsize,$localdate) = ( stat($localPath) )[7,9];
-		$mirrored = $filedate == $localdate && $filesize == $localsize;
-	}
-	
-	unless($mirrored) {
-		$remotePath = '/'.$remotePath  unless(substr($remotePath,0,1) eq '/');
-		File::Path::make_path($localDir);
-		#print STDERR join(" -=- ",$remotePath,$cachingDir,$localPath,$localBasePath,$localRelDir,$localDir),"\n";
-		my $targetLocalPath = $localPath;
-		$localPath = $bpDataServer->get($remotePath,$localPath);
-		print STDERR "DEBUGFTP: ($remotePath -> $targetLocalPath) ".$bpDataServer->message."\n"  unless(defined($localPath));
-		utime($filedate,$filedate,$localPath)  if(defined($localPath));
-	}
-	
-	return $localPath;
-}
-
 sub parseIHECsample($$$$) {
-	my($bpDataServer,$metadataPath,$sample_id,$cachingDir) = @_;
+	my($bpDataServer,$metadataPath,$sample_id,$workingDir) = @_;
 	
 	print "\t* Parsing IHEC sample $sample_id...\n";
 	
-	my $localIHECsample = cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'),$cachingDir);
+	my $localIHECsample = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'));
 	
 	my %IHECsample = ();
 	if(defined($localIHECsample)) {
@@ -569,11 +542,11 @@ sub parseIHECsample($$$$) {
 }
 
 sub parseIHECexperiment($$$$) {
-	my($bpDataServer,$metadataPath,$experiment_id,$cachingDir) = @_;
+	my($bpDataServer,$metadataPath,$experiment_id,$workingDir) = @_;
 	
 	print "\t* Parsing IHEC experiment $experiment_id...\n";
 	
-	my $localIHECexperiment = cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'),$cachingDir);
+	my $localIHECexperiment = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'));
 	
 	my %IHECexperiment = ();
 	my $library_strategy = undef;
@@ -629,7 +602,7 @@ if(scalar(@ARGV)>=2) {
 	my $iniFile = shift(@ARGV);
 	
 	# Defined outside
-	$cachingDir = shift(@ARGV);
+	my $cachingDir = shift(@ARGV);
 	my $modelDomain = shift(@ARGV);
 	
 	Carp::croak('ERROR: Unknown knowledge domain '.$modelDomain)  if(defined($modelDomain) && $modelDomain ne 'sdata' && !exists($DOMAIN2EXPANAL{$modelDomain}));
@@ -707,7 +680,7 @@ if(scalar(@ARGV)>=2) {
 	
 	
 	# First, explicitly create the caching directory
-	File::Path::make_path($cachingDir);
+	$workingDir = BP::DCCLoader::WorkingDir->new($cachingDir);
 	
 	print "Connecting to $host...\n";
 	# Defined outside
@@ -726,9 +699,9 @@ if(scalar(@ARGV)>=2) {
 		Carp::croak("Unknown protocol $protocol");
 	}
 	
-	my $localIndexPath = cachedGet($bpDataServer,$indexPath.'/'.$publicIndex,$cachingDir);
-	my $localDataFilesIndexPath = cachedGet($bpDataServer,$indexPath.'/'.$dataIndex,$cachingDir);
-	my $localExp2Datasets = cachedGet($bpDataServer,$indexPath.'/'.$exp2datasets,$cachingDir);
+	my $localIndexPath = $workingDir->cachedGet($bpDataServer,$indexPath.'/'.$publicIndex);
+	my $localDataFilesIndexPath = $workingDir->cachedGet($bpDataServer,$indexPath.'/'.$dataIndex);
+	my $localExp2Datasets = $workingDir->cachedGet($bpDataServer,$indexPath.'/'.$exp2datasets);
 	
 	if(defined($localIndexPath)) {
 		Carp::carp("WARNING: Unable to fetch experiments to datasets correspondence from $indexPath (host $host)")  unless(defined($localExp2Datasets));
@@ -969,7 +942,7 @@ if(scalar(@ARGV)>=2) {
 											my $p_remote_files = (ref($remote_file) eq 'ARRAY')?$remote_file:[$remote_file];
 											
 											foreach my $r_file (@{$p_remote_files}) {
-												my $local_file = cachedGet($bpDataServer,$r_file,$cachingDir);
+												my $local_file = $workingDir->cachedGet($bpDataServer,$r_file);
 												
 												if(defined($local_file)) {
 													my $f_mode = undef;
