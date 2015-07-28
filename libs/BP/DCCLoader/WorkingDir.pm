@@ -8,8 +8,9 @@ use File::Path ();
 use File::Spec ();
 use File::Temp ();
 
-# Really not needed
+# Really not needed, but it enforces the architecture
 use Net::FTP::AutoReconnect;
+#use Net::SFTP::Foreign 1.76;
 
 package BP::DCCLoader::WorkingDir;
 
