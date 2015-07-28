@@ -63,7 +63,7 @@ sub new(;$) {
 	} else {
 		my $tempDir = File::Temp->newdir('bpCachedGetXXXXXX',TMPDIR => 1);
 		$self->{_tempdir} = $tempDir;
-		$workingDir = $tmpdir->dirname;
+		$workingDir = $tempDir->dirname;
 	}
 	
 	$self->{workingDir} = $workingDir;
