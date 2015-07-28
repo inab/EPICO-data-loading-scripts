@@ -23,7 +23,7 @@ sub new() {
 
 # A template of metadata
 use constant UNK_METADATA => {
-	'assembly_version'	=>	1,
+	'assembly_version'	=>	38,
 	'program_versions'	=>	[
 	],
 	'alignment_algorithm'	=>	{

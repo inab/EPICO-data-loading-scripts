@@ -87,7 +87,7 @@ package BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::Hyper;
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
 
 use constant METH_HYPER_METADATA => {
-	'assembly_version'	=>	1,
+	'assembly_version'	=>	38,
 	'program_versions'	=>	[
 		{
 			'program'	=>	'GEM',
@@ -154,7 +154,7 @@ package BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::Hypo;
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
 
 use constant METH_HYPO_METADATA => {
-	'assembly_version'	=>	1,
+	'assembly_version'	=>	38,
 	'program_versions'	=>	[
 		{
 			'program'	=>	'GEM',

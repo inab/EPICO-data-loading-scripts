@@ -10,7 +10,7 @@ package BP::DCCLoader::Parsers::CpGInsertionParser;
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
 
 use constant METH_CPG_METADATA => {
-	'assembly_version'	=>	1,
+	'assembly_version'	=>	38,
 	'program_versions'	=>	[
 		{
 			'program'	=>	'GEM',

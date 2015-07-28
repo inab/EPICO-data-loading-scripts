@@ -8,7 +8,7 @@ package BP::DCCLoader::Parsers::WigglerInsertionParser;
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
 
 use constant WIGGLER_METADATA => {
-	'assembly_version'	=>	1,
+	'assembly_version'	=>	38,
 	'program_versions'	=>	[
 	],
 	'alignment_algorithm'	=>	{

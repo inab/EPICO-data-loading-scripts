@@ -10,7 +10,7 @@ package BP::DCCLoader::Parsers::DNASEBedInsertionParser;
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
 
 use constant DS_METADATA => {
-	'assembly_version'	=>	1,
+	'assembly_version'	=>	38,
 	'program_versions'	=>	[
 		{
 			'program'	=>	'BWA',
