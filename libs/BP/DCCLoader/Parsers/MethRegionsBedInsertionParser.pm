@@ -3,6 +3,7 @@
 use warnings;
 use strict;
 
+use BP::DCCLoader::Parsers;
 use TabParser;
 
 # For the reused constant

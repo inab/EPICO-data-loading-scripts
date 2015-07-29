@@ -3,6 +3,8 @@
 use warnings;
 use strict;
 
+use BP::DCCLoader::Parsers;
+
 package BP::DCCLoader::Parsers::WigglerInsertionParser;
 
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);

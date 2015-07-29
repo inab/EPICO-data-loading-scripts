@@ -4,6 +4,7 @@ use warnings;
 use strict;
 
 use Carp;
+use BP::DCCLoader::Parsers;
 
 package BP::DCCLoader::Parsers::AbstractInsertionParser;
 
