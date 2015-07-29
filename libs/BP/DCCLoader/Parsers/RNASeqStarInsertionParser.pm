@@ -3,14 +3,18 @@
 use warnings;
 use strict;
 
+use BP::DCCLoader::Parsers;
+use BP::DCCLoader::WorkingDir;
 use TabParser;
 
 package BP::DCCLoader::Parsers::RNASeqStarInsertionParser;
 
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
 
+use BP::DCCLoader::Parsers::EnsemblGTParser;
+
 use constant CRG_STAR_METADATA => {
-	'assembly_version'	=>	1,
+	'assembly_version'	=>	38,
 	'program_versions'	=>	[
 	],
 	'alignment_algorithm'	=>	{
@@ -27,8 +31,8 @@ use constant CRG_STAR_METADATA => {
 			'url'	=>	'http://cufflinks.cbcb.umd.edu/manual.html#cufflinks_input',
 		},
 		{
-			'name'	=>	'Flux Capacitor',
-			'url'	=>	'http://sammeth.net/confluence/display/FLUX/Home',
+			'name'	=>	'Star/RSEM',
+			'url'	=>	'http://deweylab.biostat.wisc.edu/rsem/',
 		}
 	],
 };
@@ -38,7 +42,129 @@ sub new(;$$) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
-	$self = $class->SUPER::new()  unless(ref($self));
+	$self = $class->SUPER::new(@_)  unless(ref($self));
+	
+	return $self;
+}
+
+sub getEnsemblCoordinates() {
+	my $self = shift;
+	
+	unless(exists($self->{ENShash})) {
+		$self->{ENShash} = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($self->{model},$self->{workingDir},$self->{ini});
+	}
+	
+	return $self->{ENShash};
+}
+
+my @CommonKeysDelete = (
+	'gene_id',
+	'transcript_id(s)',
+	'transcript_id',
+	'length',
+	'effective_length',
+	'expected_count',
+	'TPM',
+	'FPKM',
+);
+
+#####
+# Parser method bodies
+# --------------
+# Each method must take these parameters
+#	F: A filehandler with the content
+#	analysis_id: The analysis_id for each entry
+#	mapper: A BP::Loader::Mapper instance
+#####
+sub commonInsert($$$\@;$) {
+	my $self = shift;
+	
+	my($F,$analysis_id,$mapper,$p_colnames,$isTranscript) = @_;
+	
+	# Get the Ensembl hash
+	my $p_ensHash = $self->getEnsemblCoordinates();
+	
+	# UGLY
+	my $BMAX = $mapper->bulkBatchSize();
+	
+	my $numBatch = 0;
+	my @batch = ();
+	
+	my %rnaRSemStarGeneParserConfig = (
+		TabParser::TAG_HAS_HEADER	=>	1,
+		TabParser::TAG_FETCH_COLS	=>	$p_colnames,
+		TabParser::TAG_CALLBACK => sub {
+			my %metrics = ();
+			@metrics{@{$p_colnames}} = @_;
+			
+			my %entry = (
+				'analysis_id'	=>	$analysis_id,
+				'gene_stable_id'	=>	$metrics{'gene_id'},
+				'length'	=>	$metrics{'length'},
+				'effective_length'	=>	$metrics{'effective_length'},
+				'expected_count'	=>	$metrics{'expected_count'},
+				'TPM'	=>	$metrics{'TPM'},
+				'FPKM'	=>	$metrics{'FPKM'},
+				'is_annotated'	=>	1,
+				'metrics'	=>	\%metrics
+			);
+			
+			# Choosing the ensId
+			my $ensId;
+			if($isTranscript) {
+				$ensId = $entry{'transcript_stable_id'} = $metrics{'transcript_id'};
+			} else {
+				$ensId = $metrics{'gene_id'}
+			}
+			
+			# Remove the revision from the ensId
+			$ensId = substr($ensId,0,rindex($ensId,'.'));
+			
+			# Now, let's get the chromosomical coordinates
+			if(exists($p_ensHash->{$ensId})) {
+				my $p_data = $p_ensHash->{$ensId};
+				$entry{'chromosome'} = $p_data->{'chromosome'};
+				$entry{'chromosome_start'} = $p_data->{'chromosome_start'};
+				$entry{'chromosome_end'} = $p_data->{'chromosome_end'};
+				
+				# Removing redundant data
+				delete @metrics{@CommonKeysDelete};
+				
+				push(@batch,\%entry);
+				$numBatch++;
+				
+				if($numBatch >= $BMAX) {
+					$mapper->bulkInsert(\@batch);
+					
+					@batch = ();
+					$numBatch = 0;
+				}
+			} else {
+				Carp::carp("ERROR: Next entry was rejected as its Ensembl Id does not match with the ones defined\n".join("\t",@{$p_colnames})."\n".join("\t",@_));
+			}
+		},
+	);
+	TabParser::parseTab($F,%rnaRSemStarGeneParserConfig);
+	
+	# Last step
+	if($numBatch > 0) {
+		$mapper->bulkInsert(\@batch);
+		
+		@batch = ();
+	}
+}
+
+
+package BP::DCCLoader::Parsers::RNASeqStarInsertionParser::Genes;
+
+use base qw(BP::DCCLoader::Parsers::RNASeqStarInsertionParser);
+
+# This is the empty constructor
+sub new(;$$) {
+	my($self)=shift;
+	my($class)=ref($self) || $self;
+	
+	$self = $class->SUPER::new(@_)  unless(ref($self));
 	
 	return $self;
 }
@@ -54,23 +180,30 @@ sub getParsingFeatures() {
 			[['.results' => 'gq_crg']],
 			'g',
 			$self,
-			CRG_STAR_METADATA,
-			undef
-		],
-		
-		'RNA_TRANSCRIPT_QUANT_STAR_CRG'	=>	[
-			'exp',
-			['15b'],
-			undef,
-			[['.results' => 'tq_crg']],
-			't',
-			$self,
-			CRG_STAR_METADATA,
+			BP::DCCLoader::Parsers::RNASeqStarInsertionParser::CRG_STAR_METADATA,
 			undef
 		],
 	};
 	
 }
+
+my $p_colnamesGenes = [
+	'gene_id',
+	'transcript_id(s)',
+	'length',
+	'effective_length',
+	'expected_count',
+	'TPM',
+	'FPKM',
+	'posterior_mean_count',
+	'posterior_standard_deviation_of_count',
+	'pme_TPM',
+	'pme_FPKM',
+	'TPM_ci_lower_bound',
+	'TPM_ci_upper_bound',
+	'FPKM_ci_lower_bound',
+	'FPKM_ci_upper_bound',
+];
 
 #####
 # Parser method bodies
@@ -81,80 +214,79 @@ sub getParsingFeatures() {
 #	mapper: A BP::Loader::Mapper instance
 #####
 sub insert($$$) {
+	my $self = shift;
+	
+	return $self->commonInsert($_[0],$_[1],$_[2],$p_colnamesGenes);
+}
+
+# This call registers the parser
+BP::DCCLoader::Parsers::_registerParsableFiletypes(__PACKAGE__);
+
+
+package BP::DCCLoader::Parsers::RNASeqStarInsertionParser::Transcripts;
+
+use base qw(BP::DCCLoader::Parsers::RNASeqStarInsertionParser);
+
+# This is the empty constructor
+sub new(;$$) {
+	my($self)=shift;
+	my($class)=ref($self) || $self;
+	
+	$self = $class->SUPER::new(@_)  unless(ref($self));
+	
+	return $self;
+}
+
+sub getParsingFeatures() {
 	my($self)=shift;
 	
-	my($F,$analysis_id,$mapper) = @_;
+	return {
+		'RNA_TRANSCRIPT_QUANT_STAR_CRG'	=>	[
+			'exp',
+			['15b'],
+			undef,
+			[['.results' => 'tq_crg']],
+			't',
+			$self,
+			BP::DCCLoader::Parsers::RNASeqStarInsertionParser::CRG_STAR_METADATA,
+			undef
+		],
+	};
 	
-	# UGLY
-	my $BMAX = $mapper->bulkBatchSize();
+}
+
+my $p_colnamesTranscripts = [
+	'transcript_id',
+	'gene_id',
+	'length',
+	'effective_length',
+	'expected_count',
+	'TPM',
+	'FPKM',
+	'IsoPct',
+	'posterior_mean_count',
+	'posterior_standard_deviation_of_count',
+	'pme_TPM',
+	'pme_FPKM',
+	'IsoPct_from_pme_TPM',
+	'TPM_ci_lower_bound',
+	'TPM_ci_upper_bound',
+	'FPKM_ci_lower_bound',
+	'FPKM_ci_upper_bound',
+];
+
+#####
+# Parser method bodies
+# --------------
+# Each method must take these parameters
+#	F: A filehandler with the content
+#	analysis_id: The analysis_id for each entry
+#	mapper: A BP::Loader::Mapper instance
+#####
+sub insert($$$) {
+	my $self = shift;
 	
-	my $numBatch = 0;
-	my @batch = ();
-	
-	my %rnaGFFQuantParserConfig = (
-		TabParser::TAG_HAS_HEADER	=>	1,
-		TabParser::TAG_CALLBACK => sub {
-			my(
-				$chro,
-				undef, # source
-				$feature, # feature
-				$chromosome_start,
-				$chromosome_end,
-				undef,
-				$chromosome_strand,
-				undef, # frame
-				$attributes_str, # attributes following .ace format
-			) = @_;
-			
-			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
-			
-			$chromosome = 'MT'  if($chromosome eq 'M');
-			
-			my %attributes = ();
-			
-			my @tokens = split(/\s*;\s*/,$attributes_str);
-			foreach my $token (@tokens) {
-				my($key,$value) = split(/\s+/,$token,2);
-				
-				# Removing double quotes
-				$value =~ tr/"//d;
-				
-				$attributes{$key} = $value;
-			}
-			
-			
-			my %entry = (
-				'analysis_id'	=>	$analysis_id,
-				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start,
-				'chromosome_end'	=>	$chromosome_end,
-				'chromosome_strand'	=>	(($chromosome_strand eq '-')?-1:1),
-				'normalized_read_count'	=>	$attributes{'RPKM'},
-				'raw_read_count'	=>	int($attributes{'reads'} + 0.5),
-				'is_annotated'	=>	1,
-			);
-			$entry{'gene_stable_id'} = $attributes{'gene_id'}  if(exists($attributes{'gene_id'}));
-			$entry{'transcript_stable_id'} = $attributes{'transcript_id'}  if($feature eq 'transcript' && exists($attributes{'transcript_id'}));
-			
-			push(@batch,\%entry);
-			$numBatch++;
-			
-			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
-			}
-		},
-	);
-	TabParser::parseTab($F,%rnaGFFQuantParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
+	return $self->commonInsert($_[0],$_[1],$_[2],$p_colnamesTranscripts,1);
 }
 
 # This call registers the parser
