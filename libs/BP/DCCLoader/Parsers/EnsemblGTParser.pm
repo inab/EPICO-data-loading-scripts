@@ -7,9 +7,23 @@ use BP::DCCLoader::Parsers::MySQLSchemaParser;
 
 use BP::Loader::Tools;
 
+use Carp;
+
+use Net::FTP::AutoReconnect;
+
 use TabParser;
 
+use URI;
+
 package BP::DCCLoader::Parsers::EnsemblGTParser;
+
+use constant {
+	ENSEMBL_SQL_FILE	=> 'homo_sapiens_core_{EnsemblVer}_{GRChVer}.sql.gz',
+	ENSEMBL_SEQ_REGION_FILE	=> 'seq_region.txt.gz',
+	ENSEMBL_GENE_FILE	=> 'gene.txt.gz',
+	ENSEMBL_TRANSCRIPT_FILE	=> 'transcript.txt.gz',
+	ENSEMBL_XREF_FILE	=> 'xref.txt.gz',
+};
 
 #####
 # Method bodies
@@ -237,6 +251,59 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 	%ENSintHash = ();
 	
 	return \%ENShash;
+}
+
+sub getEnsemblCoordinates($$$;$) {
+	my($model,$workingDir,$ini,$testmode) = @_;
+	
+	my $ensembl_ftp_base;
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG)) {
+		$ensembl_ftp_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG);
+	} else {
+		Carp::croak("Configuration file must have '".BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG."'");
+	}
+	
+	# Now, let's patch the properies of the different remote resources, using the properties inside the model
+	my $ensembl_sql_file = BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_SQL_FILE;
+	eval {
+		$model->annotations->applyAnnotations(\($ensembl_ftp_base,$ensembl_sql_file));
+	};
+	
+	if($@) {
+		Carp::croak("$@ (does not exist in model)");
+	}
+	
+	# And translate these to URI objects
+	$ensembl_ftp_base = URI->new($ensembl_ftp_base);
+	
+	# Defined outside
+	my $ftpServer = undef;
+	
+	# Fetching FTP resources
+	print "Connecting to $ensembl_ftp_base...\n";
+	
+	my $ensemblHost = $ensembl_ftp_base->host();
+	$ftpServer = Net::FTP::AutoReconnect->new($ensemblHost,Debug=>0) || Carp::croak("FTP connection to server ".$ensemblHost." failed: ".$@);
+	$ftpServer->login(BP::DCCLoader::WorkingDir::ANONYMOUS_USER,BP::DCCLoader::WorkingDir::ANONYMOUS_PASS) || Carp::croak("FTP login to server $ensemblHost failed: ".$ftpServer->message());
+	$ftpServer->binary();
+	
+	my $ensemblPath = $ensembl_ftp_base->path;
+	
+	my $localSQLFile = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.$ensembl_sql_file);
+	my $localSeqRegion = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_SEQ_REGION_FILE);
+	my $localGenes = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_GENE_FILE);
+	my $localTranscripts = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_TRANSCRIPT_FILE);
+	my $localXref = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_XREF_FILE);
+	
+	Carp::croak("FATAL ERROR: Unable to fetch files from $ensemblPath (host $ensemblHost)")  unless(defined($localSQLFile) && defined($localSeqRegion) && defined($localGenes) && defined($localTranscripts) && defined($localXref));
+	
+	$ftpServer->disconnect()  if($ftpServer->can('disconnect'));
+	$ftpServer->quit()  if($ftpServer->can('quit'));
+	$ftpServer = undef;
+	
+	my $chroCV = $model->getNamedCV('EnsemblChromosomes');
+		
+	return parseEnsemblGenesAndTranscripts($chroCV,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localXref,$testmode);
 }
 
 1;

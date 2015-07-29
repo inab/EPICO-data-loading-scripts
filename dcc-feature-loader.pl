@@ -26,27 +26,18 @@ use BP::Loader::Mapper::Autoload::Relational;
 use BP::Loader::Mapper::Autoload::Elasticsearch;
 use BP::Loader::Mapper::Autoload::MongoDB;
 
+use BP::DCCLoader::Parsers;
 use BP::DCCLoader::WorkingDir;
 use BP::DCCLoader::Parsers::EnsemblGTParser;
 
 use TabParser;
 
-use constant DCC_LOADER_SECTION => 'dcc-loader';
-
 use constant {
-	ENSEMBL_FTP_BASE_TAG	=> 'ensembl-ftp-base-uri',
 	GENCODE_FTP_BASE_TAG	=> 'gencode-ftp-base-uri',
 	REACTOME_BASE_TAG	=> 'reactome-base-uri',
 	GENCODE_GTF_FILE_TAG	=> 'gencode-gtf',
 	REACTOME_BUNDLE_TAG	=> 'reactome-bundle',
-	ENSEMBL_SQL_FILE	=> 'homo_sapiens_core_{EnsemblVer}_{GRChVer}.sql.gz',
-	ENSEMBL_SEQ_REGION_FILE	=> 'seq_region.txt.gz',
-	ENSEMBL_GENE_FILE	=> 'gene.txt.gz',
-	ENSEMBL_TRANSCRIPT_FILE	=> 'transcript.txt.gz',
-	ENSEMBL_XREF_FILE	=> 'xref.txt.gz',
 	REACTOME_INTERACTIONS_FILE	=> 'homo_sapiens.interactions.txt.gz',
-	ANONYMOUS_USER	=> 'ftp',
-	ANONYMOUS_PASS	=> 'guest@',
 };
 
 sub parseGTF(@);
@@ -198,7 +189,6 @@ if(scalar(@ARGV)>=2) {
 	# First, let's read the configuration
 	my $ini = Config::IniFiles->new(-file => $iniFile, -default => $BP::Loader::Mapper::DEFAULTSECTION);
 	
-	my $ensembl_ftp_base = undef;
 	my $gencode_ftp_base = undef;
 	my $reactome_http_base = undef;
 	
@@ -206,32 +196,26 @@ if(scalar(@ARGV)>=2) {
 	my $reactome_bundle_file = undef;
 	
 	# Check the needed parameters for the construction
-	if($ini->exists(DCC_LOADER_SECTION,ENSEMBL_FTP_BASE_TAG)) {
-		$ensembl_ftp_base = $ini->val(DCC_LOADER_SECTION,ENSEMBL_FTP_BASE_TAG);
-	} else {
-		Carp::croak("Configuration file $iniFile must have '".ENSEMBL_FTP_BASE_TAG."'");
-	}
-	
-	if($ini->exists(DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG)) {
-		$gencode_ftp_base = $ini->val(DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG);
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG)) {
+		$gencode_ftp_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG);
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".GENCODE_FTP_BASE_TAG."'");
 	}
 	
-	if($ini->exists(DCC_LOADER_SECTION,REACTOME_BASE_TAG)) {
-		$reactome_http_base = URI->new($ini->val(DCC_LOADER_SECTION,REACTOME_BASE_TAG));
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BASE_TAG)) {
+		$reactome_http_base = URI->new($ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BASE_TAG));
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".REACTOME_BASE_TAG."'");
 	}
 	
-	if($ini->exists(DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG)) {
-		$gencode_gtf_file = $ini->val(DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG);
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG)) {
+		$gencode_gtf_file = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG);
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".GENCODE_GTF_FILE_TAG."'");
 	}
 	
-	if($ini->exists(DCC_LOADER_SECTION,REACTOME_BUNDLE_TAG)) {
-		$reactome_bundle_file = $ini->val(DCC_LOADER_SECTION,REACTOME_BUNDLE_TAG);
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BUNDLE_TAG)) {
+		$reactome_bundle_file = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BUNDLE_TAG);
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".REACTOME_BUNDLE_TAG."'");
 	}
@@ -257,9 +241,8 @@ if(scalar(@ARGV)>=2) {
 	print "\tDONE!\n";
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
-	my $ensembl_sql_file = ENSEMBL_SQL_FILE;
 	eval {
-		$model->annotations->applyAnnotations(\($ensembl_ftp_base,$gencode_ftp_base,$gencode_gtf_file,$reactome_bundle_file,$ensembl_sql_file));
+		$model->annotations->applyAnnotations(\($gencode_ftp_base,$gencode_gtf_file,$reactome_bundle_file));
 	};
 	
 	if($@) {
@@ -267,7 +250,6 @@ if(scalar(@ARGV)>=2) {
 	}
 	
 	# And translate these to URI objects
-	$ensembl_ftp_base = URI->new($ensembl_ftp_base);
 	$gencode_ftp_base = URI->new($gencode_ftp_base);
 	
 	# Setting up the loader storage model(s)
@@ -311,34 +293,13 @@ if(scalar(@ARGV)>=2) {
 	
 	my $reactome_bundle_local = $workingDir->mirror($reactome_bundle_uri);
 	
-	# Fetching FTP resources
-	print "Connecting to $ensembl_ftp_base...\n";
 	# Defined outside
 	my $ftpServer = undef;
-	
-	my $ensemblHost = $ensembl_ftp_base->host();
-	$ftpServer = Net::FTP::AutoReconnect->new($ensemblHost,Debug=>0) || Carp::croak("FTP connection to server ".$ensemblHost." failed: ".$@);
-	$ftpServer->login(ANONYMOUS_USER,ANONYMOUS_PASS) || Carp::croak("FTP login to server $ensemblHost failed: ".$ftpServer->message());
-	$ftpServer->binary();
-	
-	my $ensemblPath = $ensembl_ftp_base->path;
-	
-	my $localSQLFile = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.$ensembl_sql_file);
-	my $localSeqRegion = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_SEQ_REGION_FILE);
-	my $localGenes = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_GENE_FILE);
-	my $localTranscripts = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_TRANSCRIPT_FILE);
-	my $localXref = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.ENSEMBL_XREF_FILE);
-	
-	Carp::croak("FATAL ERROR: Unable to fetch files from $ensemblPath (host $ensemblHost)")  unless(defined($localSQLFile) && defined($localSeqRegion) && defined($localGenes) && defined($localTranscripts) && defined($localXref));
-	
-	$ftpServer->disconnect()  if($ftpServer->can('disconnect'));
-	$ftpServer->quit()  if($ftpServer->can('quit'));
-	$ftpServer = undef;
 	
 	print "Connecting to $gencode_ftp_base...\n";
 	my $gencodeHost = $gencode_ftp_base->host();
 	$ftpServer = Net::FTP::AutoReconnect->new($gencodeHost,Debug=>0) || Carp::croak("FTP connection to server ".$gencodeHost." failed: ".$@);
-	$ftpServer->login(ANONYMOUS_USER,ANONYMOUS_PASS) || Carp::croak("FTP login to server $gencodeHost failed: ".$ftpServer->message());
+	$ftpServer->login(BP::DCCLoader::WorkingDir::ANONYMOUS_USER,BP::DCCLoader::WorkingDir::ANONYMOUS_PASS) || Carp::croak("FTP login to server $gencodeHost failed: ".$ftpServer->message());
 	$ftpServer->binary();
 	
 	my $gencodePath = $gencode_ftp_base->path();
@@ -352,7 +313,7 @@ if(scalar(@ARGV)>=2) {
 	$ftpServer = undef;
 	
 	my $chroCV = $model->getNamedCV('EnsemblChromosomes');
-	my $p_ENShash = BP::DCCLoader::Parsers::EnsemblGTParser::parseEnsemblGenesAndTranscripts($chroCV,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localXref,$testmode);
+	my $p_ENShash = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($model,$workingDir,$ini,$testmode);
 	
 	print "Parsing ",$localGTF,"\n";
 	if(open(my $GTF,'-|',BP::Loader::Tools::GUNZIP,'-c',$localGTF)) {
