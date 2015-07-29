@@ -330,6 +330,7 @@ sub public_results_callback {
 		
 		my %donor = (
 			'donor_id'	=>	$donor_id,
+			'donor_kind'	=>	$donor_kind,
 			'donor_sex'	=>	exists($SEXCV{$donor_sex})?$SEXCV{$donor_sex}:undef,
 			'donor_region_of_residence'	=>	[$donor_region_of_residence_term],
 			'donor_ethnicity'	=>	$donor_ethnicity,
@@ -383,6 +384,10 @@ sub public_results_callback {
 				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0002372";
 			} elsif($tissue_type eq "Bone marrow"){
 				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0002371";
+			} elsif($tissue_type eq "Thymus") {
+				# This is more specific, but as I'm unsure....
+				# $specimen_term = "http://purl.obolibrary.org/obo/UBERON_0003483";
+				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0002370";
 			}
 		}
 		
