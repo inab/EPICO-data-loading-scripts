@@ -14,6 +14,11 @@ use Net::FTP::AutoReconnect;
 
 package BP::DCCLoader::WorkingDir;
 
+use constant {
+	ANONYMOUS_USER	=> 'ftp',
+	ANONYMOUS_PASS	=> 'guest@',
+};
+
 # _cachedGet parameters:
 #	ftpServer: A Net::FTP or Net::FTP::AutoReconnect instance
 #	remotePath: The resource to be fetched using the FTP server
