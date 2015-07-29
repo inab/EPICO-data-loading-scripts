@@ -362,7 +362,7 @@ sub public_results_callback {
 			$donor_min_age_at_specimen_acquisition = 'P0Y';
 		}
 		
-		my $donor_disease = ($donor_disease_text eq 'None')? 'http://www.ebi.ac.uk/efo/EFO_0000761': undef;
+		my $donor_disease = ($donor_disease_text eq 'None')? 'http://purl.obolibrary.org/obo/PATO_0000461': undef;
 		
 		my $specimen_term = undef;
 		
