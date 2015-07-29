@@ -33,14 +33,12 @@ use BP::DCCLoader::Parsers::DNASEBedInsertionParser;
 use BP::DCCLoader::Parsers::MACSBedInsertionParser;
 use BP::DCCLoader::Parsers::MethRegionsBedInsertionParser;
 use BP::DCCLoader::Parsers::RNASeqGFFInsertionParser;
-#use BP::DCCLoader::Parsers::RNASeqStarInsertionParser;
+use BP::DCCLoader::Parsers::RNASeqStarInsertionParser;
 use BP::DCCLoader::Parsers::WigglerInsertionParser;
 
 use BP::DCCLoader::WorkingDir;
 
 use TabParser;
-
-use constant DCC_LOADER_SECTION => 'dcc-loader';
 
 use constant {
 	PUBLIC_INDEX_DEFAULT	=>	'public.results.index',
@@ -52,6 +50,8 @@ use constant PUBLIC_INDEX_COLS => [
 	# sdata_donor
 	'DONOR_ID',	# donor_id
 	'CELL_LINE',	# alternate donor_id
+	'POOL_ID',	# alternate donor_id
+	'POOLED_DONOR_IDS',
 	'DONOR_SEX',	# donor_sex
 	'DONOR_REGION_OF_RESIDENCE', # donor_region_of_residence
 	'DONOR_ETHNICITY',	# donor_ethnicity
@@ -66,6 +66,8 @@ use constant PUBLIC_INDEX_COLS => [
 	'DONOR_HEALTH_STATUS',	# donor_health_status
 	'DISEASE_ONTOLOGY_URI',	# donor_disease, it contains the URI of NCI term or nothing if healthy
 	'DISEASE',	# donor_disease_text
+	'TREATMENT',	# The treatment being received by donor on specimen adcquisition
+	
 	'SPECIMEN_PROCESSING',	# specimen_processing and specimen_processing_other
 	'SPECIMEN_STORAGE',	# specimen_storage and specimen_storage_other
 	'BIOMATERIAL_PROVIDER',	# specimen_biomaterial_provider
@@ -101,8 +103,9 @@ use constant PUBLIC_INDEX_COLS => [
 ];
 
 my %SEXCV = (
-	'Male'	=>	'm',
-	'Female'	=>	'f',
+	'male'	=>	'm',
+	'female'	=>	'f',
+	'mixed'	=>	'b',
 );
 
 my %GROUPCV = (
@@ -110,7 +113,7 @@ my %GROUPCV = (
 	'NCMLS'	=>	['1'],
 	'NCMLS_CU'	=>	['1','3b'],
 	'MPIMG'	=>	['12d'],
-	'IDIBAPS'	=>	['10']
+	'IDIBAPS'	=>	['10'],
 );
 
 my %EXPERIMENTCV = (
@@ -132,28 +135,6 @@ my %INSTRUMENT2PLATFORM = (
 	'NextSeq 500'	=>	100,
 );
 
-my $p_FILETYPE2ANAL = BP::DCCLoader::Parsers->getParsableFiletypes();
-
-######
-# Shouldn't be global variables, but we need them in the different callbacks
-######
-my %donors = ();
-tie(%donors,'Tie::IxHash');
-
-my %specimens = ();
-tie(%specimens,'Tie::IxHash');
-
-my %samples = ();
-tie(%samples,'Tie::IxHash');
-
-my %experiments = ();
-
-# Laboratory experiments and analysis metadata
-my %lab = ();
-my %anal = ();
-
-my %reg_analysis = ();
-
 # Constants to access the data on each domain in primary_anal
 use constant {
 	P_ANALYSIS_ID	=>	0,
@@ -161,24 +142,6 @@ use constant {
 	P_METHOD	=>	2,
 	P_FILE	=>	3,
 };
-
-my %primary_anal = ();
-
-my %expfiles = ();
-
-# Correspondence between experiment ids and EGA ids
-my %exp2EGA = ();
-
-# Cache for cell lines
-my %cellSpecimenTerm = ();
-my %cellPurifiedTerm = ();
-
-# Parameters needed
-# Either a Net::FTP or Net::FTP::AutoReconnect instance
-my $bpDataServer = undef;
-my $metadataPath = undef;
-# A BP::DCCLoader::WorkingDir instance
-my $workingDir = undef;
 
 #####
 # Method prototypes
@@ -196,13 +159,14 @@ sub experiments_to_datasets_callback(\%$$$) {
 	$p_exp2EGA->{$experiment_id} = $dataset_id;
 }
 
-my $ensembl_version = undef;
-my $gencode_version = undef;
-
 sub data_files_callback {
 	my(
+		$payload,
+		
 		$donor_id,
 		$cell_line,
+		$pool_id,
+		$pooled_donor_ids,
 		$donor_sex,
 		$donor_region_of_residence,
 		$donor_ethnicity,
@@ -213,6 +177,8 @@ sub data_files_callback {
 		$donor_health_status,
 		$donor_disease_uri,
 		$donor_disease_text,
+		$donor_treatment,
+		
 		$specimen_processing,
 		$specimen_storage,
 		$specimen_biomaterial_provider,
@@ -233,10 +199,11 @@ sub data_files_callback {
 		$RSC,
 	)=@_;
 	
-	if(exists($experiments{$experiment_id})) {
+	
+	if(exists($payload->{experiments}{$experiment_id})) {
 		# And this is the analysis metadata
-		if(exists($p_FILETYPE2ANAL->{$file_type})) {
-			my $ftype = $p_FILETYPE2ANAL->{$file_type};
+		if(exists($payload->{FILETYPE2ANAL}{$file_type})) {
+			my $ftype = $payload->{FILETYPE2ANAL}{$file_type};
 			my $analDomain = $ftype->[BP::DCCLoader::Parsers::F_DOMAIN];
 			
 			# Analysis id building
@@ -259,7 +226,7 @@ sub data_files_callback {
 			if(defined($an_postfix)) {
 				my $analysis_id = $experiment_id.'_'.$an_postfix;
 				
-				unless(exists($reg_analysis{$analysis_id})) {
+				unless(exists($payload->{reg_analysis}{$analysis_id})) {
 					my $f_metadata = $ftype->[BP::DCCLoader::Parsers::F_METADATA];
 					$f_metadata = {}  unless(defined($f_metadata));
 					
@@ -269,8 +236,8 @@ sub data_files_callback {
 						'analysis_group_id'	=>	$ftype->[BP::DCCLoader::Parsers::F_ANALYSIS_GROUP_ID],
 						'data_status'	=>	defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])?2:0,
 						'assembly_version'	=>	$f_metadata->{assembly_version},
-						'ensembl_version'	=>	$ensembl_version,
-						'gencode_version'	=>	$gencode_version,
+						'ensembl_version'	=>	$payload->{ensembl_version},
+						'gencode_version'	=>	$payload->{gencode_version},
 					);
 					$analysis{NSC} = $NSC  if($NSC ne '-');
 					$analysis{RSC} = $RSC  if($RSC ne '-');
@@ -280,16 +247,16 @@ sub data_files_callback {
 					}
 					
 					# Last, register it!
-					$anal{$analDomain} = []  unless(exists($anal{$analDomain}));
-					push(@{$anal{$analDomain}},\%analysis);
-					$reg_analysis{$analysis_id} = undef;
+					$payload->{anal}{$analDomain} = []  unless(exists($payload->{anal}{$analDomain}));
+					push(@{$payload->{anal}{$analDomain}},\%analysis);
+					$payload->{reg_analysis}{$analysis_id} = undef;
 				}
 				
 				# Preparing the field
 				if(defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])) {
-					$primary_anal{$analDomain} = []  unless(exists($primary_anal{$analDomain}));
+					$payload->{primary_anal}{$analDomain} = []  unless(exists($payload->{primary_anal}{$analDomain}));
 					
-					push(@{$primary_anal{$analDomain}},[$analysis_id,$ftype->[BP::DCCLoader::Parsers::F_PRIMARY],$ftype->[BP::DCCLoader::Parsers::F_PARSER],$remote_file_path]);
+					push(@{$payload->{primary_anal}{$analDomain}},[$analysis_id,$ftype->[BP::DCCLoader::Parsers::F_PRIMARY],$ftype->[BP::DCCLoader::Parsers::F_PARSER],$remote_file_path]);
 				}
 			}
 		}
@@ -298,8 +265,12 @@ sub data_files_callback {
 
 sub public_results_callback {
 	my(
+		$payload,
+		
 		$donor_id,
 		$cell_line,
+		$pool_id,
+		$pooled_donor_ids,
 		$donor_sex,
 		$donor_region_of_residence,
 		$donor_ethnicity,
@@ -310,6 +281,8 @@ sub public_results_callback {
 		$donor_health_status,
 		$donor_disease_uri,
 		$donor_disease_text,
+		$donor_treatment,
+		
 		$specimen_processing,
 		$specimen_storage,
 		$specimen_biomaterial_provider,
@@ -330,13 +303,30 @@ sub public_results_callback {
 		$RSC,
 	)=@_;
 	
-	$donor_id = $cell_line  if($donor_id eq '-');
+	my $donor_kind;
 	
-	unless(exists($donors{$donor_id})) {
+	if($donor_id eq '-') {
+		if($cell_line ne '-') {
+			$donor_id = $cell_line;
+			$donor_kind = 'c';
+		} elsif($pool_id ne '-') {
+			$donor_id = $pool_id;
+			$donor_kind = 'p';
+		} else {
+			Carp::croak("Unable to identify the kind of donor");
+		}
+	} else {
+		$donor_kind = 'd';
+	}
+	
+	unless(exists($payload->{donors}{$donor_id})) {
 		$donor_ethnicity = undef  if($donor_ethnicity eq 'NA' || $donor_ethnicity eq '-');
 		
 		my $donor_region_of_residence_term = '001';	# World
 		$donor_region_of_residence_term = 'ALIAS:EAL'  if($donor_region_of_residence eq "East Anglia");
+		
+		# To avoid case matching problems
+		$donor_sex = lc($donor_sex);
 		
 		my %donor = (
 			'donor_id'	=>	$donor_id,
@@ -345,12 +335,15 @@ sub public_results_callback {
 			'donor_ethnicity'	=>	$donor_ethnicity,
 			'notes'	=> ($cell_line ne '-')?'Cell line':undef,
 		);
-		$donors{$donor_id} = \%donor;
+		# For the case of pooled donor ids
+		$donor{'pooled_donor_ids'} = [split(/,/,$pooled_donor_ids)]  if($donor_kind eq 'p' && $pooled_donor_ids ne '-');
+		
+		$payload->{donors}{$donor_id} = \%donor;
 	}
 	
 	my $specimen_id = $sample_id . '_spec';
 	my $p_IHECsample = undef;
-	unless(exists($specimens{$specimen_id})) {
+	unless(exists($payload->{specimens}{$specimen_id})) {
 		$donor_health_status = undef  if($donor_health_status eq 'NA' || $donor_health_status eq '-');
 		$specimen_processing = undef  if($specimen_processing eq 'NA' || $specimen_processing eq '-');
 		$specimen_storage = undef  if($specimen_storage eq 'NA' || $specimen_storage eq '-');
@@ -395,14 +388,14 @@ sub public_results_callback {
 		
 		# Last resort, look at the cache
 		if(defined($specimen_term)) {
-			$cellSpecimenTerm{$cell_line} = $specimen_term  if($cell_line ne '-' && !exists($cellSpecimenTerm{$cell_line}));
-		} elsif($cell_line ne '-' && exists($cellSpecimenTerm{$cell_line})) {
-			$specimen_term = $cellSpecimenTerm{$cell_line};
+			$payload->{cellSpecimenTerm}{$cell_line} = $specimen_term  if($cell_line ne '-' && !exists($payload->{cellSpecimenTerm}{$cell_line}));
+		} elsif($cell_line ne '-' && exists($payload->{cellSpecimenTerm}{$cell_line})) {
+			$specimen_term = $payload->{cellSpecimenTerm}{$cell_line};
 		}
 		
 		Carp::croak("Undefined specimen term for $specimen_id!!!!")  unless(defined($specimen_term));
 		
-		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$workingDir);
+		$p_IHECsample = parseIHECsample($payload->{bpDataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir});
 		my %specimen = (
 			'specimen_id'	=>	$specimen_id,
 			'tissue_type'	=>	$tissue_type,
@@ -423,11 +416,12 @@ sub public_results_callback {
 			'specimen_available'	=>	undef,
 			'donor_id'	=>	$donor_id,
 		);
-		$specimens{$specimen_id} = \%specimen;
+		$specimen{'donor_treatment'} = $donor_treatment  if($donor_treatment ne '-' && $donor_treatment ne 'NA');
+		$payload->{specimens}{$specimen_id} = \%specimen;
 	}
 	
-	unless(exists($samples{$sample_id})) {
-		$p_IHECsample = parseIHECsample($bpDataServer,$metadataPath,$sample_id,$workingDir)  unless(defined($p_IHECsample));
+	unless(exists($payload->{samples}{$sample_id})) {
+		$p_IHECsample = parseIHECsample($payload->{bpDataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir})  unless(defined($p_IHECsample));
 		
 		my $purified_cell_type = undef;
 
@@ -442,9 +436,9 @@ sub public_results_callback {
 		
 		# Last resort, look at the cache
 		if(defined($purified_cell_type)) {
-			$cellPurifiedTerm{$cell_line} = $purified_cell_type  if($cell_line ne '-' && !exists($cellPurifiedTerm{$cell_line}));
-		} elsif($cell_line ne '-' && exists($cellPurifiedTerm{$cell_line})) {
-			$purified_cell_type = $cellPurifiedTerm{$cell_line};
+			$payload->{cellPurifiedTerm}{$cell_line} = $purified_cell_type  if($cell_line ne '-' && !exists($payload->{cellPurifiedTerm}{$cell_line}));
+		} elsif($cell_line ne '-' && exists($payload->{cellPurifiedTerm}{$cell_line})) {
+			$purified_cell_type = $payload->{cellPurifiedTerm}{$cell_line};
 		} else {
 			# When we don't know, it is the most general term, hematopoietic cell
 			$purified_cell_type = "http://purl.obolibrary.org/obo/CL_0000988";
@@ -460,15 +454,15 @@ sub public_results_callback {
 			'analyzed_sample_interval'	=>	undef,
 			'specimen_id'	=>	$specimen_id,
 		);
-		$samples{$sample_id} = \%sample;
+		$payload->{samples}{$sample_id} = \%sample;
 	}
 	
 	if(exists($EXPERIMENTCV{$library_strategy})) {
 		# This is the experimental metadata
-		unless(exists($experiments{$experiment_id})) {
+		unless(exists($payload->{experiments}{$experiment_id})) {
 			my $labexp = $EXPERIMENTCV{$library_strategy};
 			
-			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($bpDataServer,$metadataPath,$experiment_id,$workingDir);
+			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($payload->{bpDataServer},$payload->{metadataPath},$experiment_id,$payload->{workingDir});
 			
 			my %features = map { $_ => { 'feature' => $_ , 'value' => $p_IHECexperiment->{$_}[0], 'units' => $p_IHECexperiment->{$_}[1] } } keys(%{$p_IHECexperiment});
 			
@@ -482,8 +476,8 @@ sub public_results_callback {
 				'features'	=>	\%features,
 				'raw_data_repository'	=>	1,
 				'raw_data_accession'	=>	{
-									'accession'	=>	exists($exp2EGA{$experiment_id})?$exp2EGA{$experiment_id}:'',
-									'url'	=>	exists($exp2EGA{$experiment_id})?('https://www.ebi.ac.uk/ega/datasets/'.$exp2EGA{$experiment_id}):'',
+									'accession'	=>	exists($payload->{exp2EGA}{$experiment_id})?$payload->{exp2EGA}{$experiment_id}:'',
+									'url'	=>	exists($payload->{exp2EGA}{$experiment_id})?('https://www.ebi.ac.uk/ega/datasets/'.$payload->{exp2EGA}{$experiment_id}):'',
 								},
 				'platform'	=>	exists($INSTRUMENT2PLATFORM{$instrument_model})?$INSTRUMENT2PLATFORM{$instrument_model}:-1,
 				'platform_model'	=>	$ihec_instrument_model,
@@ -492,9 +486,9 @@ sub public_results_callback {
 			);
 			
 			# Last, register it!
-			$lab{$labexp} = []  unless(exists($lab{$labexp}));
-			push(@{$lab{$labexp}},\%experiment);
-			$experiments{$experiment_id} = undef;
+			$payload->{lab}{$labexp} = []  unless(exists($payload->{lab}{$labexp}));
+			push(@{$payload->{lab}{$labexp}},\%experiment);
+			$payload->{experiments}{$experiment_id} = undef;
 		}
 		
 		&data_files_callback(@_);
@@ -607,6 +601,63 @@ if(scalar(@ARGV)>=2) {
 	
 	Carp::croak('ERROR: Unknown knowledge domain '.$modelDomain)  if(defined($modelDomain) && $modelDomain ne 'sdata' && !exists($DOMAIN2EXPANAL{$modelDomain}));
 	
+
+
+
+
+	######
+	# These were global variables, but as we need them in the different callbacks
+	######
+	my %donors = ();
+	tie(%donors,'Tie::IxHash');
+	
+	my %specimens = ();
+	tie(%specimens,'Tie::IxHash');
+	
+	my %samples = ();
+	tie(%samples,'Tie::IxHash');
+	
+	my %experiments = ();
+	
+	# Laboratory experiments and analysis metadata
+	my %lab = ();
+	my %anal = ();
+	
+	my $p_FILETYPE2ANAL;
+	
+	my %reg_analysis = ();
+	
+	my %primary_anal = ();
+	
+	my %expfiles = ();
+	
+	# Correspondence between experiment ids and EGA ids
+	my %exp2EGA = ();
+	
+	# Cache for cell lines
+	my %cellSpecimenTerm = ();
+	my %cellPurifiedTerm = ();
+	
+	# Parameters needed
+	# Either a Net::FTP or Net::FTP::AutoReconnect instance
+	my $bpDataServer = undef;
+	my $metadataPath = undef;
+	# A BP::DCCLoader::WorkingDir instance
+	my $workingDir = undef;
+	
+	my $ensembl_version = undef;
+	my $gencode_version = undef;
+
+
+
+
+
+
+
+
+
+
+
 	# First, let's read the configuration
 	my $ini = Config::IniFiles->new(-file => $iniFile, -default => $BP::Loader::Mapper::DEFAULTSECTION);
 	
@@ -619,61 +670,61 @@ if(scalar(@ARGV)>=2) {
 	# Defined outside
 	$metadataPath = undef;
 	
-	if($ini->exists(DCC_LOADER_SECTION,'protocol')) {
-		$protocol = $ini->val(DCC_LOADER_SECTION,'protocol');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'protocol')) {
+		$protocol = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'protocol');
 	} else {
 		Carp::croak("Configuration file $iniFile must have 'protocol'");
 	}
 	
-	if($ini->exists(DCC_LOADER_SECTION,'host')) {
-		$host = $ini->val(DCC_LOADER_SECTION,'host');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'host')) {
+		$host = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'host');
 	} else {
 		Carp::croak("Configuration file $iniFile must have 'host'");
 	}
 	
-	if($ini->exists(DCC_LOADER_SECTION,'user')) {
-		$user = $ini->val(DCC_LOADER_SECTION,'user');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'user')) {
+		$user = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'user');
 	} else {
 		$user = 'ftp'  if($protocol eq 'ftp');
 		Carp::croak("Configuration file $iniFile must have 'user'");
 	}
 	
-	if($ini->exists(DCC_LOADER_SECTION,'pass')) {
-		$pass = $ini->val(DCC_LOADER_SECTION,'pass');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'pass')) {
+		$pass = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'pass');
 	} else {
 		$pass = ($user eq 'ftp')?'guest@':''  if($protocol eq 'ftp');
 		Carp::croak("Configuration file $iniFile must have 'pass'");
 	}
 	
-	if($ini->exists(DCC_LOADER_SECTION,'index-path')) {
-		$indexPath = $ini->val(DCC_LOADER_SECTION,'index-path');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'index-path')) {
+		$indexPath = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'index-path');
 	} else {
 		Carp::croak("Configuration file $iniFile must have 'index-path'");
 	}
 	
-	if($ini->exists(DCC_LOADER_SECTION,'metadata-path')) {
-		$metadataPath = $ini->val(DCC_LOADER_SECTION,'metadata-path');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-path')) {
+		$metadataPath = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-path');
 	} else {
 		Carp::croak("Configuration file $iniFile must have 'metadata-path'");
 	}
 	
 	my $publicIndex;
-	if($ini->exists(DCC_LOADER_SECTION,'public-index-file')) {
-		$publicIndex = $ini->val(DCC_LOADER_SECTION,'public-index-file');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'public-index-file')) {
+		$publicIndex = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'public-index-file');
 	} else {
 		$publicIndex = PUBLIC_INDEX_DEFAULT;
 	}
 	
 	my $dataIndex;
-	if($ini->exists(DCC_LOADER_SECTION,'data-index-file')) {
-		$dataIndex = $ini->val(DCC_LOADER_SECTION,'data-index-file');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'data-index-file')) {
+		$dataIndex = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'data-index-file');
 	} else {
 		$dataIndex = DATA_INDEX_DEFAULT;
 	}
 	
 	my $exp2datasets;
-	if($ini->exists(DCC_LOADER_SECTION,'exp2datasets-file')) {
-		$exp2datasets = $ini->val(DCC_LOADER_SECTION,'exp2datasets-file');
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'exp2datasets-file')) {
+		$exp2datasets = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'exp2datasets-file');
 	} else {
 		$exp2datasets = EXPERIMENTS2DATASETS_DEFAULT;
 	}
@@ -717,7 +768,7 @@ if(scalar(@ARGV)>=2) {
 		my $model = undef;
 		eval {
 			$model = BP::Model->new($modelFile);
-			$ensembl_version = exists($model->annotations->hash->{GENCODEVer})?$model->annotations->hash->{EnsemblVer}:'';
+			$ensembl_version = exists($model->annotations->hash->{EnsemblVer})?$model->annotations->hash->{EnsemblVer}:'';
 			$gencode_version = exists($model->annotations->hash->{GENCODEVer})?$model->annotations->hash->{GENCODEVer}:'';
 		};
 		
@@ -740,6 +791,9 @@ if(scalar(@ARGV)>=2) {
 			}
 		}
 		
+		# Initializations of parsable file types, needed by next parsing tasks
+		$p_FILETYPE2ANAL = BP::DCCLoader::Parsers->getParsableFiletypes({'ini'=>$ini,'model'=>$model,'workingDir'=>$workingDir});
+
 		# First, these correspondences experiment <=> EGA needed by next parse
 		if(defined($localExp2Datasets)) {
 			print "Parsing ",$exp2datasets,"...\n";
@@ -759,11 +813,33 @@ if(scalar(@ARGV)>=2) {
 			Carp::carp("WARNING: $exp2datasets unavailable. raw_data_accession subfields will be empty");
 		}
 		
+		my $publicIndexPayload = {
+			'donors'	=>	\%donors,
+			'specimens'	=>	\%specimens,
+			'samples'	=>	\%samples,
+			'experiments'	=>	\%experiments,
+			'lab'	=>	\%lab,
+			'anal'	=>	\%anal,
+			'FILETYPE2ANAL'	=>	$p_FILETYPE2ANAL,
+			'reg_analysis'	=>	\%reg_analysis,
+			'primary_anal'	=>	\%primary_anal,
+			'expfiles'	=>	\%expfiles,
+			'exp2EGA'	=>	\%exp2EGA,
+			'cellSpecimenTerm'	=>	\%cellSpecimenTerm,
+			'cellPurifiedTerm'	=>	\%cellPurifiedTerm,
+			'workingDir'	=>	$workingDir,
+			'bpDataServer'	=>	$bpDataServer,
+			'metadataPath'	=>	$metadataPath,
+			'ensembl_version'	=>	$ensembl_version,
+			'gencode_version'	=>	$gencode_version,
+		};
+		
 		print "Parsing ",$publicIndex,"...\n";
 		# Now, let's parse the public.site.index, the backbone
 		if(open(my $PSI,'<:encoding(UTF-8)',$localIndexPath)) {
 			my %indexConfig = (
 				TabParser::TAG_HAS_HEADER	=> 1,
+				TabParser::TAG_CONTEXT	=> $publicIndexPayload,
 				TabParser::TAG_FETCH_COLS => PUBLIC_INDEX_COLS,
 				TabParser::TAG_CALLBACK => \&public_results_callback,
 			);
@@ -779,6 +855,7 @@ if(scalar(@ARGV)>=2) {
 		if(open(my $DFI,'<:encoding(UTF-8)',$localDataFilesIndexPath)) {
 			my %indexConfig = (
 				TabParser::TAG_HAS_HEADER	=> 1,
+				TabParser::TAG_CONTEXT	=> $publicIndexPayload,
 				TabParser::TAG_FETCH_COLS => PUBLIC_INDEX_COLS,
 				TabParser::TAG_POS_FILTER	=> [['FILE_TYPE' => 'BS_METH_TABLE_CYTOSINES_CNAG']],
 				TabParser::TAG_CALLBACK => \&data_files_callback,
