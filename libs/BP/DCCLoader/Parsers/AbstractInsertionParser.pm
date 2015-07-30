@@ -8,6 +8,8 @@ use BP::DCCLoader::Parsers;
 
 package BP::DCCLoader::Parsers::AbstractInsertionParser;
 
+use TabParser;
+
 # Next keywords are recognized:
 use constant {
 	K_INI	=>	'ini',
