@@ -121,13 +121,11 @@ sub parseGTF(@) {
 		# Last, store it!!!
 		if($local) {
 			foreach my $mapper (@{$p_mappers}) {
-				my $entorp = $mapper->validateAndEnactEntry($p_regionData);
 				unless($testmode) {
-					my $destination = $mapper->getInternalDestination();
-					my $bulkData = $mapper->_bulkPrepare($entorp);
-					$mapper->_bulkInsert($destination,$bulkData);
+					$mapper->bulkInsert($p_regionData);
 				} else {
 					print "[TESTMODE] Skipping storage of gene and transcript coordinates\n";
+					my $entorp = $mapper->validateAndEnactEntry($p_regionData);
 				}
 			}
 		}
@@ -332,13 +330,11 @@ if(scalar(@ARGV)>=2) {
 	
 	# Storing the final genes and transcripts data
 	foreach my $mapper (@mappers) {
-		my $entorp = $mapper->validateAndEnactEntry(values(%{$p_ENShash}));
 		unless($testmode) {
-			my $destination = $mapper->getInternalDestination();
-			my $bulkData = $mapper->_bulkPrepare($entorp);
-			$mapper->_bulkInsert($destination,$bulkData);
+			$mapper->bulkInsert(values(%{$p_ENShash}));
 		} else {
 			print "[TESTMODE] Skipping storage of remaining gene and transcript coordinates\n";
+			my $entorp = $mapper->validateAndEnactEntry(values(%{$p_ENShash}));
 		}
 		$mapper->freeDestination();
 	}
@@ -375,13 +371,11 @@ if(scalar(@ARGV)>=2) {
 			%foundInter=();
 			
 			foreach my $mapper (@mappers) {
-				my $entorp = $mapper->validateAndEnactEntry(values(%pathways));
 				unless($testmode) {
-					my $destination = $mapper->getInternalDestination();
-					my $bulkData = $mapper->_bulkPrepare($entorp);
-					$mapper->_bulkInsert($destination,$bulkData);
+					$mapper->bulkInsert(values(%pathways));
 				} else {
 					print "[TESTMODE] Skipping storage of pathways mappings\n";
+					my $entorp = $mapper->validateAndEnactEntry(values(%pathways));
 				}
 				$mapper->freeDestination();
 			}
