@@ -14,6 +14,7 @@ use File::Basename;
 use File::Spec;
 # Give autoflush to STDOUT and STDERR
 use IO::Handle;
+use Log::Log4perl;
 use Net::FTP::AutoReconnect;
 #use Net::SFTP::Foreign 1.76;
 use Tie::IxHash;
@@ -28,6 +29,7 @@ use BP::Loader::Mapper::Autoload::Elasticsearch;
 use BP::Loader::Mapper::Autoload::MongoDB;
 
 use BP::DCCLoader::Parsers;
+use BP::DCCLoader::Parsers::AbstractInsertionParser;
 use BP::DCCLoader::Parsers::CpGInsertionParser;
 use BP::DCCLoader::Parsers::DNASEBedInsertionParser;
 use BP::DCCLoader::Parsers::MACSBedInsertionParser;
@@ -39,6 +41,12 @@ use BP::DCCLoader::Parsers::WigglerInsertionParser;
 use BP::DCCLoader::WorkingDir;
 
 use TabParser;
+
+my $LOG;
+BEGIN {
+	Log::Log4perl->easy_init( { level => $Log::Log4perl::INFO, layout => "[%d{ISO8601}]%p %m%n" } );
+	$LOG = Log::Log4perl->get_logger(__PACKAGE__);
+};
 
 use constant {
 	PUBLIC_INDEX_DEFAULT	=>	'public.results.index',
@@ -509,7 +517,7 @@ sub public_results_callback {
 sub parseIHECsample($$$$) {
 	my($bpDataServer,$metadataPath,$sample_id,$workingDir) = @_;
 	
-	print "\t* Parsing IHEC sample $sample_id...\n";
+	$LOG->info("\t* Parsing IHEC sample $sample_id...");
 	
 	my $localIHECsample = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'));
 	
@@ -543,7 +551,7 @@ sub parseIHECsample($$$$) {
 sub parseIHECexperiment($$$$) {
 	my($bpDataServer,$metadataPath,$experiment_id,$workingDir) = @_;
 	
-	print "\t* Parsing IHEC experiment $experiment_id...\n";
+	$LOG->info("\t* Parsing IHEC experiment $experiment_id...");
 	
 	my $localIHECexperiment = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'));
 	
@@ -589,10 +597,19 @@ sub parseIHECexperiment($$$$) {
 }
 
 my $testmode = undef;
-if(scalar(@ARGV)>0 && $ARGV[0] eq '-t') {
-	$testmode = 1;
-	shift(@ARGV);
-	print "* [TESTMODE] Enabled test mode (only validating data)\n";
+if(scalar(@ARGV)>0) {
+	if(index($ARGV[0],'-t')==0) {
+		my $testmodeText;
+		if(index($ARGV[0],'-tt')==0) {
+			$testmode = 2;
+			$testmodeText = 'only validating both data and metadata';
+		} else {
+			$testmode = 1;
+			$testmodeText = 'only validating metadata and skipping big data';
+		}
+		$LOG->info("* [TESTMODE] Enabled test mode, level $testmode ($testmodeText)");
+		shift(@ARGV);
+	}
 }
 
 if(scalar(@ARGV)>=2) {
@@ -738,7 +755,7 @@ if(scalar(@ARGV)>=2) {
 	# First, explicitly create the caching directory
 	$workingDir = BP::DCCLoader::WorkingDir->new($cachingDir);
 	
-	print "Connecting to $host...\n";
+	$LOG->info("Connecting to $host...");
 	# Defined outside
 	$bpDataServer = undef;
 	if($protocol eq 'ftp') {
@@ -760,7 +777,7 @@ if(scalar(@ARGV)>=2) {
 	my $localExp2Datasets = $workingDir->cachedGet($bpDataServer,$indexPath.'/'.$exp2datasets);
 	
 	if(defined($localIndexPath)) {
-		Carp::carp("WARNING: Unable to fetch experiments to datasets correspondence from $indexPath (host $host)")  unless(defined($localExp2Datasets));
+		$LOG->warn("Unable to fetch experiments to datasets correspondence from $indexPath (host $host)")  unless(defined($localExp2Datasets));
 
 		# Try getting a connection to 
 		
@@ -769,7 +786,7 @@ if(scalar(@ARGV)>=2) {
 		# Setting up the right path on relative cases
 		$modelFile = File::Spec->catfile(File::Basename::dirname($iniFile),$modelFile)  unless(File::Spec->file_name_is_absolute($modelFile));
 
-		print "Parsing model $modelFile...\n";
+		$LOG->info("Parsing model $modelFile...");
 		my $model = undef;
 		eval {
 			$model = BP::Model->new($modelFile);
@@ -780,7 +797,7 @@ if(scalar(@ARGV)>=2) {
 		if($@) {
 			Carp::croak('ERROR: Model parsing and validation failed. Reason: '.$@);
 		}
-		print "\tDONE!\n";
+		$LOG->info("\tDONE!");
 
 		my %storageModels = ();
 		
@@ -797,11 +814,16 @@ if(scalar(@ARGV)>=2) {
 		}
 		
 		# Initializations of parsable file types, needed by next parsing tasks
-		$p_FILETYPE2ANAL = BP::DCCLoader::Parsers->getParsableFiletypes({'ini'=>$ini,'model'=>$model,'workingDir'=>$workingDir});
+		$p_FILETYPE2ANAL = BP::DCCLoader::Parsers->getParsableFiletypes({
+			BP::DCCLoader::Parsers::AbstractInsertionParser::K_INI		=>	$ini,
+			BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL	=>	$model,
+			BP::DCCLoader::Parsers::AbstractInsertionParser::K_WORKINGDIR	=>	$workingDir,
+			BP::DCCLoader::Parsers::AbstractInsertionParser::K_TESTMODE	=>	$testmode,
+		});
 
 		# First, these correspondences experiment <=> EGA needed by next parse
 		if(defined($localExp2Datasets)) {
-			print "Parsing ",$exp2datasets,"...\n";
+			$LOG->info("Parsing $exp2datasets...");
 			if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
 				my %e2dConfig = (
 					TabParser::TAG_HAS_HEADER	=> 1,
@@ -815,7 +837,7 @@ if(scalar(@ARGV)>=2) {
 				Carp::croak("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
 			}
 		} else {
-			Carp::carp("WARNING: $exp2datasets unavailable. raw_data_accession subfields will be empty");
+			$LOG->warn("$exp2datasets unavailable. raw_data_accession subfields will be empty");
 		}
 		
 		my $publicIndexPayload = {
@@ -839,7 +861,7 @@ if(scalar(@ARGV)>=2) {
 			'gencode_version'	=>	$gencode_version,
 		};
 		
-		print "Parsing ",$publicIndex,"...\n";
+		$LOG->info("Parsing $publicIndex...");
 		# Now, let's parse the public.site.index, the backbone
 		if(open(my $PSI,'<:encoding(UTF-8)',$localIndexPath)) {
 			my %indexConfig = (
@@ -855,7 +877,7 @@ if(scalar(@ARGV)>=2) {
 			Carp::croak("Unable to parse $localIndexPath, the main metadata holder");
 		}
 
-		print "Parsing ",$dataIndex,"...\n";
+		$LOG->info("Parsing $dataIndex...");
 		# Now, let's parse the data_files.index, the backbone
 		if(open(my $DFI,'<:encoding(UTF-8)',$localDataFilesIndexPath)) {
 			my %indexConfig = (
@@ -875,15 +897,15 @@ if(scalar(@ARGV)>=2) {
 		
 		# For each data model
 		foreach my $loadModelName (@loadModels) {
-			print "Storing data using $loadModelName mapper\n";
+			$LOG->info("Storing data using $loadModelName mapper");
 			my $mapper = $storageModels{$loadModelName};
 			
 			# Now, do we need to push the metadata there?
 			if(!$ini->exists($BP::Loader::Mapper::SECTION,'metadata-loaders') || $ini->val($BP::Loader::Mapper::SECTION,'metadata-loaders') eq 'true') {
 				if($testmode) {
-					print "\t [TESTMODE]Skipping storage of metadata model\n";
+					$LOG->info("\t [TESTMODE]Skipping storage of metadata model");
 				} else {
-					print "\t* Storing native model\n";
+					$LOG->info("\t* Storing native model");
 					$mapper->storeNativeModel();
 				}
 			}
@@ -891,7 +913,7 @@ if(scalar(@ARGV)>=2) {
 			# Several hacks in a row... Yuck!
 			if(!defined($modelDomain) || $modelDomain eq 'sdata') {
 				my $conceptDomain = $model->getConceptDomain('sdata');
-				print "Storing ",$conceptDomain->fullname,"\n";
+				$LOG->info("Storing ".$conceptDomain->fullname);
 
 				my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash});
 				
@@ -910,7 +932,7 @@ if(scalar(@ARGV)>=2) {
 					$bulkData = $mapper->_bulkPrepare($entorp);
 					$mapper->_bulkInsert($destination,$bulkData);
 				} else {
-					print "[TESTMODE] Skipping storage of donors\n";
+					$LOG->info("[TESTMODE] Skipping storage of donors");
 				}
 				
 				$destination = undef;
@@ -929,7 +951,7 @@ if(scalar(@ARGV)>=2) {
 					$bulkData = $mapper->_bulkPrepare($entorp);
 					$mapper->_bulkInsert($destination,$bulkData);
 				} else {
-					print "[TESTMODE] Skipping storage of specimens\n";
+					$LOG->info("[TESTMODE] Skipping storage of specimens");
 				}
 				
 				$destination = undef;
@@ -948,7 +970,7 @@ if(scalar(@ARGV)>=2) {
 					$bulkData = $mapper->_bulkPrepare($entorp);
 					$mapper->_bulkInsert($destination,$bulkData);
 				} else {
-					print "[TESTMODE] Skipping storage of samples\n";
+					$LOG->info("[TESTMODE] Skipping storage of samples");
 				}
 				
 				$destination = undef;
@@ -973,7 +995,8 @@ if(scalar(@ARGV)>=2) {
 						my $bulkData = undef;
 						my $entorp = undef;
 
-						print "Storing $labFullname\n\t* ",$labConceptDomain->conceptHash->{$expDomain}->fullname,"...\n";
+						$LOG->info("Storing $labFullname");
+						$LOG->info("\t* ".$labConceptDomain->conceptHash->{$expDomain}->fullname."...");
 						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{$expDomain}));
 						$entorp = $mapper->validateAndEnactEntry($lab{$expDomain});
 						unless($testmode) {
@@ -981,7 +1004,7 @@ if(scalar(@ARGV)>=2) {
 							$bulkData = $mapper->_bulkPrepare($entorp);
 							$mapper->_bulkInsert($destination,$bulkData);
 						} else {
-							print "\t[TESTMODE] Skipping storage of IHEC experiment data $labFullname\n";
+							$LOG->info("\t[TESTMODE] Skipping storage of IHEC experiment data $labFullname");
 						}
 						
 						$destination = undef;
@@ -994,10 +1017,10 @@ if(scalar(@ARGV)>=2) {
 								my $conceptDomain = $model->getConceptDomain($analDomain);
 								my %corrConcepts = map { $_ => BP::Loader::CorrelatableConcept->new($conceptDomain->conceptHash->{$_}) } keys(%{$conceptDomain->conceptHash});
 								
-								print "Storing ",$conceptDomain->fullname,"\n";
+								$LOG->info("Storing ".$conceptDomain->fullname);
 								
 								if(exists($corrConcepts{'m'})) {
-									print "\t* ",$corrConcepts{'m'}->concept->fullname,"...\n";
+									$LOG->info("\t* ".$corrConcepts{'m'}->concept->fullname."...");
 									$mapper->setDestination($corrConcepts{'m'});
 									$entorp = $mapper->validateAndEnactEntry($anal{$analDomain});
 									unless($testmode) {
@@ -1005,7 +1028,7 @@ if(scalar(@ARGV)>=2) {
 										$bulkData = $mapper->_bulkPrepare($entorp);
 										$mapper->_bulkInsert($destination,$bulkData);
 									} else {
-										print "\t[TESTMODE] Skipping storage of analysis metadata ".$corrConcepts{'m'}->concept->fullname."\n";
+										$LOG->info("\t[TESTMODE] Skipping storage of analysis metadata ".$corrConcepts{'m'}->concept->fullname);
 									}
 									
 									$destination = undef;
@@ -1017,7 +1040,7 @@ if(scalar(@ARGV)>=2) {
 									if(exists($primary_anal{$analDomain})) {
 										foreach my $p_primary (@{$primary_anal{$analDomain}}) {
 											my($analysis_id,$conceptName,$instance,$remote_file) = @{$p_primary};
-											print "\t* ",$corrConcepts{$conceptName}->concept->fullname," ($remote_file)...\n";
+											$LOG->info("\t* ".$corrConcepts{$conceptName}->concept->fullname." ($remote_file)...");
 											
 											$mapper->setDestination($corrConcepts{$conceptName});
 											
@@ -1040,7 +1063,7 @@ if(scalar(@ARGV)>=2) {
 													}
 													
 													if(open(my $F,$f_mode,@f_params)) {
-														unless($testmode) {
+														unless($testmode && $testmode==1) {
 															eval {
 																$instance->insert($F,$analysis_id,$mapper);
 															};
@@ -1049,7 +1072,7 @@ if(scalar(@ARGV)>=2) {
 																Carp::carp("Errors while processing $remote_file: ".$@);
 															}
 														} else {
-															print "\t[TESTMODE] Skipping storage of ".$corrConcepts{$conceptName}->concept->fullname." ($local_file)\n";
+															$LOG->info("\t[TESTMODE] Skipping storage of ".$corrConcepts{$conceptName}->concept->fullname." ($local_file)");
 														}
 														close($F);
 													} else {
@@ -1081,5 +1104,5 @@ if(scalar(@ARGV)>=2) {
 	$bpDataServer->quit()  if($bpDataServer->can('quit'));
 	
 } else {
-	print STDERR "Usage: $0 [-t] iniFile cachingDir [",join('|','sdata',sort(keys(%DOMAIN2EXPANAL))),"]\n"
+	print STDERR "Usage: $0 [-t|-tt] iniFile cachingDir [",join('|','sdata',sort(keys(%DOMAIN2EXPANAL))),"]\n"
 }
