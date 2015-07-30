@@ -11,7 +11,7 @@ package BP::DCCLoader::Parsers::RNASeqStarInsertionParser;
 
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
 
-use BP::DCCLoader::Parsers::EnsemblGTParser;
+use BP::DCCLoader::Parsers::GencodeGTFParser;
 
 use constant CRG_STAR_METADATA => {
 	'assembly_version'	=>	38,
@@ -47,14 +47,24 @@ sub new(;\%) {
 	return $self;
 }
 
-sub getEnsemblCoordinates() {
+{
+my $p_GThash = undef;	
+
+sub getGencodeCoordinates() {
 	my $self = shift;
 	
-	unless(exists($self->{ENShash})) {
-		$self->{ENShash} = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_WORKINGDIR},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_INI});
+	unless($p_GThash) {
+		my $p_Gencode;
+		my $p_PAR;
+		($p_Gencode,$p_PAR,$p_GThash) = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_WORKINGDIR},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_INI});
+		
+		# Collapsing Gencode unique genes and transcripts into Ensembl's hash
+		@{$p_GThash}{keys(%{$p_PAR})} = values(%{$p_PAR});
 	}
 	
-	return $self->{ENShash};
+	return $p_GThash;
+}
+
 }
 
 my @CommonKeysDelete = (
@@ -81,7 +91,7 @@ sub commonInsert($$\@;$) {
 	my($analysis_id,$p_insertMethod,$p_colnames,$isTranscript) = @_;
 	
 	# Get the Ensembl hash
-	my $p_ensHash = $self->getEnsemblCoordinates();
+	my $p_ensHash = $self->getGencodeCoordinates();
 	
 	my %rnaRSemStarGeneParserConfig = (
 		TabParser::TAG_HAS_HEADER	=>	1,
