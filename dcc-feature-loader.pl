@@ -28,112 +28,21 @@ use BP::Loader::Mapper::Autoload::MongoDB;
 
 use BP::DCCLoader::Parsers;
 use BP::DCCLoader::WorkingDir;
-use BP::DCCLoader::Parsers::EnsemblGTParser;
+use BP::DCCLoader::Parsers::GencodeGTFParser;
 
 use TabParser;
 
 use constant {
-	GENCODE_FTP_BASE_TAG	=> 'gencode-ftp-base-uri',
 	REACTOME_BASE_TAG	=> 'reactome-base-uri',
-	GENCODE_GTF_FILE_TAG	=> 'gencode-gtf',
 	REACTOME_BUNDLE_TAG	=> 'reactome-bundle',
 	REACTOME_INTERACTIONS_FILE	=> 'homo_sapiens.interactions.txt.gz',
 };
 
-sub parseGTF(@);
 sub parseReactomeInteractions($$$$$);
 
 #####
 # Method bodies
 #####
-sub parseGTF(@) {
-	my(
-		$payload,
-		$chro,
-		undef, # source
-		$feature, # feature
-		$chromosome_start,
-		$chromosome_end,
-		undef,
-		$chromosome_strand,
-		undef, # frame
-		$attributes_str, # attributes following .ace format
-	) = @_;
-	
-	my($p_ENShash,$p_mappers,$chroCV,$testmode) = @{$payload};
-	
-	my %attributes = ();
-	
-	#print STDERR "DEBUG: ",join(" ",@_),"\n"  unless(defined($attributes_str));
-	my @tokens = split(/\s*;\s*/,$attributes_str);
-	foreach my $token (@tokens) {
-		my($key,$value) = split(/\s+/,$token,2);
-		
-		# Removing double quotes
-		$value =~ tr/"//d;
-		
-		$attributes{$key} = $value;
-	}
-	
-	my $p_regionData = undef;
-	my $local = 1;
-	
-	my $ensIdKey = undef;
-	my $p_ensFeatures = undef;
-	if($feature eq 'gene') {
-		$ensIdKey = 'gene_id';
-		$p_ensFeatures = ['gene_name','havana_gene'];
-	} else {
-		$ensIdKey = 'transcript_id';
-		$p_ensFeatures = ['transcript_name','havana_transcript','ccdsid'];
-	}
-	
-	my $fullEnsemblId = $attributes{$ensIdKey};
-	my $ensemblId = substr($fullEnsemblId,0,index($fullEnsemblId,'.'));
-		
-	if($feature eq 'gene' || $feature eq 'transcript') {
-		if(exists($p_ENShash->{$ensemblId})) {
-			$p_regionData = $p_ENShash->{$ensemblId};
-			$local = undef;
-		}
-	}
-	
-	if($local) {
-		my $term = $chroCV->getTerm($chro);
-		if($term) {
-			$p_regionData = {
-				#$fullEnsemblId,
-				'feature_cluster_id'	=> $attributes{'gene_id'},
-				'chromosome'	=> $term->key(),
-				'chromosome_start'	=> $chromosome_start,
-				'chromosome_end'	=> $chromosome_end,
-				'symbol'	=> [$fullEnsemblId,$ensemblId],
-				'feature'	=> $feature
-			};
-		}
-	}
-	
-	if($p_regionData) {
-		foreach my $ensFeature (@{$p_ensFeatures}) {
-			push(@{$p_regionData->{symbol}},$attributes{$ensFeature})  if(exists($attributes{$ensFeature}));
-		}
-		
-		# Last, store it!!!
-		if($local) {
-			foreach my $mapper (@{$p_mappers}) {
-				unless($testmode) {
-					$mapper->bulkInsert($p_regionData);
-				} else {
-					print "[TESTMODE] Skipping storage of gene and transcript coordinates\n";
-					my $entorp = $mapper->validateAndEnactEntry($p_regionData);
-				}
-			}
-		}
-	}
-	
-	1;
-}
-
 my @TRANSKEYS = ('chromosome','chromosome_start','chromosome_end');
 
 sub parseReactomeInteractions($$$$$) {
@@ -194,22 +103,10 @@ if(scalar(@ARGV)>=2) {
 	my $reactome_bundle_file = undef;
 	
 	# Check the needed parameters for the construction
-	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG)) {
-		$gencode_ftp_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG);
-	} else {
-		Carp::croak("Configuration file $iniFile must have '".GENCODE_FTP_BASE_TAG."'");
-	}
-	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BASE_TAG)) {
 		$reactome_http_base = URI->new($ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BASE_TAG));
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".REACTOME_BASE_TAG."'");
-	}
-	
-	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG)) {
-		$gencode_gtf_file = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG);
-	} else {
-		Carp::croak("Configuration file $iniFile must have '".GENCODE_GTF_FILE_TAG."'");
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BUNDLE_TAG)) {
@@ -240,15 +137,12 @@ if(scalar(@ARGV)>=2) {
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
 	eval {
-		$model->annotations->applyAnnotations(\($gencode_ftp_base,$gencode_gtf_file,$reactome_bundle_file));
+		$model->annotations->applyAnnotations(\($reactome_bundle_file));
 	};
 	
 	if($@) {
 		Carp::croak("$@ (does not exist in model $modelFile, used in $iniFile)");
 	}
-	
-	# And translate these to URI objects
-	$gencode_ftp_base = URI->new($gencode_ftp_base);
 	
 	# Setting up the loader storage model(s)
 	my %storageModels = ();
@@ -292,49 +186,17 @@ if(scalar(@ARGV)>=2) {
 	my $reactome_bundle_local = $workingDir->mirror($reactome_bundle_uri);
 	
 	# Defined outside
-	my $ftpServer = undef;
-	
-	print "Connecting to $gencode_ftp_base...\n";
-	my $gencodeHost = $gencode_ftp_base->host();
-	$ftpServer = Net::FTP::AutoReconnect->new($gencodeHost,Debug=>0) || Carp::croak("FTP connection to server ".$gencodeHost." failed: ".$@);
-	$ftpServer->login(BP::DCCLoader::WorkingDir::ANONYMOUS_USER,BP::DCCLoader::WorkingDir::ANONYMOUS_PASS) || Carp::croak("FTP login to server $gencodeHost failed: ".$ftpServer->message());
-	$ftpServer->binary();
-	
-	my $gencodePath = $gencode_ftp_base->path();
-	
-	my $localGTF = $workingDir->cachedGet($ftpServer,$gencodePath.'/'.$gencode_gtf_file);
-	
-	Carp::croak("FATAL ERROR: Unable to fetch files from $gencodePath (host $gencodeHost)")  unless(defined($localGTF));
-		
-	$ftpServer->disconnect()  if($ftpServer->can('disconnect'));
-	$ftpServer->quit()  if($ftpServer->can('quit'));
-	$ftpServer = undef;
-	
-	my $chroCV = $model->getNamedCV('EnsemblChromosomes');
-	my $p_ENShash = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($model,$workingDir,$ini,$testmode);
-	
-	print "Parsing ",$localGTF,"\n";
-	if(open(my $GTF,'-|',BP::Loader::Tools::GUNZIP,'-c',$localGTF)) {
-		my %config = (
-			TabParser::TAG_COMMENT	=>	'#',
-			TabParser::TAG_CONTEXT	=> [$p_ENShash,\@mappers,$chroCV,$testmode],
-			TabParser::TAG_CALLBACK => \&parseGTF,
-		);
-		$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
-		TabParser::parseTab($GTF,%config);
-		
-		close($GTF);
-	} else {
-		Carp::croak("ERROR: Unable to open EnsEMBL XREF file ".$localGTF);
-	}
+	my($p_Gencode,$p_PAR,$p_ENShash) = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($model,$workingDir,$ini,$testmode);
 	
 	# Storing the final genes and transcripts data
 	foreach my $mapper (@mappers) {
 		unless($testmode) {
+			$mapper->bulkInsert($p_Gencode);
 			$mapper->bulkInsert(values(%{$p_ENShash}));
 		} else {
 			print "[TESTMODE] Skipping storage of remaining gene and transcript coordinates\n";
-			my $entorp = $mapper->validateAndEnactEntry(values(%{$p_ENShash}));
+			$mapper->validateAndEnactEntry($p_Gencode);
+			$mapper->validateAndEnactEntry(values(%{$p_ENShash}));
 		}
 		$mapper->freeDestination();
 	}
