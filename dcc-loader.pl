@@ -602,10 +602,10 @@ if(scalar(@ARGV)>0) {
 		my $testmodeText;
 		if(index($ARGV[0],'-tt')==0) {
 			$testmode = 2;
-			$testmodeText = 'only validating both data and metadata';
+			$testmodeText = 'only validating, both data and metadata';
 		} else {
 			$testmode = 1;
-			$testmodeText = 'only validating metadata and skipping big data';
+			$testmodeText = 'only validating metadata, and skipping parsing big data';
 		}
 		$LOG->info("* [TESTMODE] Enabled test mode, level $testmode ($testmodeText)");
 		shift(@ARGV);
