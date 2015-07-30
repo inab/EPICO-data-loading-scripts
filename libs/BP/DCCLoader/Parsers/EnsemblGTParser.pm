@@ -4,6 +4,7 @@ use warnings;
 use strict;
 
 use BP::DCCLoader::Parsers::MySQLSchemaParser;
+use BP::DCCLoader::WorkingDir;
 
 use BP::Loader::Tools;
 
@@ -260,7 +261,7 @@ sub getEnsemblCoordinates($$$;$) {
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG)) {
 		$ensembl_ftp_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG);
 	} else {
-		Carp::croak("Configuration file must have '".BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG."'");
+		Carp::croak("Configuration file must have '".BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
 	}
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
