@@ -13,16 +13,10 @@ use BP::DCCLoader::Parsers::CpGInsertionParser;
 # This package contains the common methods
 package BP::DCCLoader::Parsers::MethRegionsBedInsertionParser;
 
-sub __dlatBedParser($$$$);
+sub __dlatBedParser($$$);
 
-sub __dlatBedParser($$$$) {
-	my($F,$analysis_id,$mapper,$hyperhypo) = @_;
-	
-	# UGLY
-	my $BMAX = $mapper->bulkBatchSize();
-	
-	my $numBatch = 0;
-	my @batch = ();
+sub __dlatBedParser($$$) {
+	my($analysis_id,$p_insertMethod,$hyperhypo) = @_;
 	
 	my %dlatBedParserConfig = (
 		TabParser::TAG_CALLBACK => sub {
@@ -60,25 +54,10 @@ sub __dlatBedParser($$$$) {
 				
 			);
 			
-			push(@batch,\%entry);
-			$numBatch++;
-			
-			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
-			}
+			$p_insertMethod->(\%entry);
 		},
 	);
-	TabParser::parseTab($F,%dlatBedParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
+	return \%dlatBedParserConfig;
 }
 
 
@@ -105,7 +84,7 @@ use constant METH_HYPER_METADATA => {
 };
 
 # This is the empty constructor
-sub new(;$$) {
+sub new(;\%) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
@@ -136,14 +115,13 @@ sub getParsingFeatures() {
 # Parser method bodies
 # --------------
 # Each method must take these parameters
-#	F: A filehandler with the content
 #	analysis_id: The analysis_id for each entry
-#	mapper: A BP::Loader::Mapper instance
+#	p_insertMethod: We feed this method with the prepared entries
 #####
-sub insert($$$) {
+sub _insertInternal($$$) {
 	my($self)=shift;
 	
-	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],$_[2],'hyper');
+	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],'hyper');
 }
 
 # This call registers the parser
@@ -172,7 +150,7 @@ use constant METH_HYPO_METADATA => {
 };
 
 # This is the empty constructor
-sub new(;$$) {
+sub new(;\%) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
@@ -203,14 +181,13 @@ sub getParsingFeatures() {
 # Parser method bodies
 # --------------
 # Each method must take these parameters
-#	F: A filehandler with the content
 #	analysis_id: The analysis_id for each entry
-#	mapper: A BP::Loader::Mapper instance
+#	p_insertMethod: We feed this method with the prepared entries
 #####
-sub insert($$$) {
+sub _insertInternal($$) {
 	my($self)=shift;
 	
-	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],$_[2],'hypo');
+	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],'hypo');
 }
 
 # This call registers the parser

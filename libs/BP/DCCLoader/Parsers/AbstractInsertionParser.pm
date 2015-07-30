@@ -8,7 +8,15 @@ use BP::DCCLoader::Parsers;
 
 package BP::DCCLoader::Parsers::AbstractInsertionParser;
 
-sub new() {
+# Next keywords are recognized:
+use constant {
+	K_INI	=>	'ini',
+	K_MODEL	=>	'model',
+	K_WORKINGDIR	=>	'workingDir',
+	K_TESTMODE	=>	'testmode',
+};
+
+sub new(;\%) {
 	# Very special case for multiple inheritance handling
 	# This is the seed
 	my($facet)=shift;
@@ -53,6 +61,66 @@ sub getParsingFeatures() {
 #	mapper: A BP::Loader::Mapper instance
 #####
 sub insert($$$) {
+	my($self)=shift;
+	
+	my($F,$analysis_id,$mapper) = @_;
+	
+	# UGLY
+	my $BMAX = $mapper->bulkBatchSize();
+	
+	my $numBatch = 0;
+	my @batch = ();
+	
+	my $p_insertMethod;
+	if(exists($self->{K_TESTMODE()}) && $self->{K_TESTMODE()}) {
+		$p_insertMethod = sub {
+			push(@batch,$_[0]);
+			$numBatch++;
+			
+			if($numBatch >= $BMAX) {
+				$mapper->validateAndEnactEntry(\@batch);
+				
+				@batch = ();
+				$numBatch = 0;
+			}
+		};
+	} else {
+		$p_insertMethod = sub {
+			push(@batch,$_[0]);
+			$numBatch++;
+			
+			if($numBatch >= $BMAX) {
+				$mapper->bulkInsert(\@batch);
+				
+				@batch = ();
+				$numBatch = 0;
+			}
+		};
+	}
+	
+	my $p_tabConfig = $self->_insertInternal($analysis_id,$p_insertMethod);
+	TabParser::parseTab($F,%{$p_tabConfig});
+	
+	# Last step
+	if($numBatch > 0) {
+		if(exists($self->{K_TESTMODE()}) && $self->{K_TESTMODE()}) {
+			$mapper->validateAndEnactEntry(\@batch);
+		} else {
+			$mapper->bulkInsert(\@batch);
+		}
+		@batch = ();
+	}
+}
+
+#####
+# Parser method bodies
+# --------------
+# Each method must take these parameters
+#	analysis_id: The analysis_id for each entry
+#	p_insertMethod: We feed this method with the prepared entries
+# It returns a configuration hash usable with TabParser::parseTab
+#####
+sub _insertInternal($$) {
 	Carp::croak("Abstract method! You should implement it!");
 }
 

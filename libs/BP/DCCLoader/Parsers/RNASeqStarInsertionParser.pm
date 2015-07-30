@@ -38,7 +38,7 @@ use constant CRG_STAR_METADATA => {
 };
 
 # This is the empty constructor
-sub new(;$$) {
+sub new(;\%) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
@@ -51,7 +51,7 @@ sub getEnsemblCoordinates() {
 	my $self = shift;
 	
 	unless(exists($self->{ENShash})) {
-		$self->{ENShash} = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($self->{model},$self->{workingDir},$self->{ini});
+		$self->{ENShash} = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_WORKINGDIR},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_INI});
 	}
 	
 	return $self->{ENShash};
@@ -72,23 +72,16 @@ my @CommonKeysDelete = (
 # Parser method bodies
 # --------------
 # Each method must take these parameters
-#	F: A filehandler with the content
 #	analysis_id: The analysis_id for each entry
-#	mapper: A BP::Loader::Mapper instance
+#	p_insertMethod: We feed this method with the prepared entries
 #####
-sub commonInsert($$$\@;$) {
+sub commonInsert($$\@;$) {
 	my $self = shift;
 	
-	my($F,$analysis_id,$mapper,$p_colnames,$isTranscript) = @_;
+	my($analysis_id,$p_insertMethod,$p_colnames,$isTranscript) = @_;
 	
 	# Get the Ensembl hash
 	my $p_ensHash = $self->getEnsemblCoordinates();
-	
-	# UGLY
-	my $BMAX = $mapper->bulkBatchSize();
-	
-	my $numBatch = 0;
-	my @batch = ();
 	
 	my %rnaRSemStarGeneParserConfig = (
 		TabParser::TAG_HAS_HEADER	=>	1,
@@ -130,28 +123,13 @@ sub commonInsert($$$\@;$) {
 				# Removing redundant data
 				delete @metrics{@CommonKeysDelete};
 				
-				push(@batch,\%entry);
-				$numBatch++;
-				
-				if($numBatch >= $BMAX) {
-					$mapper->bulkInsert(\@batch);
-					
-					@batch = ();
-					$numBatch = 0;
-				}
+				$p_insertMethod->(\%entry);
 			} else {
 				Carp::carp("ERROR: Next entry was rejected as its Ensembl Id does not match with the ones defined\n".join("\t",@{$p_colnames})."\n".join("\t",@_));
 			}
 		},
 	);
-	TabParser::parseTab($F,%rnaRSemStarGeneParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
+	return \%rnaRSemStarGeneParserConfig;
 }
 
 
@@ -160,7 +138,7 @@ package BP::DCCLoader::Parsers::RNASeqStarInsertionParser::Genes;
 use base qw(BP::DCCLoader::Parsers::RNASeqStarInsertionParser);
 
 # This is the empty constructor
-sub new(;$$) {
+sub new(;\%) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
@@ -209,14 +187,13 @@ my $p_colnamesGenes = [
 # Parser method bodies
 # --------------
 # Each method must take these parameters
-#	F: A filehandler with the content
 #	analysis_id: The analysis_id for each entry
-#	mapper: A BP::Loader::Mapper instance
+#	p_insertMethod: We feed this method with the prepared entries
 #####
-sub insert($$$) {
+sub _insertInternal($$) {
 	my $self = shift;
 	
-	return $self->commonInsert($_[0],$_[1],$_[2],$p_colnamesGenes);
+	return $self->commonInsert($_[0],$_[1],$p_colnamesGenes);
 }
 
 # This call registers the parser
@@ -228,7 +205,7 @@ package BP::DCCLoader::Parsers::RNASeqStarInsertionParser::Transcripts;
 use base qw(BP::DCCLoader::Parsers::RNASeqStarInsertionParser);
 
 # This is the empty constructor
-sub new(;$$) {
+sub new(;\%) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
@@ -279,14 +256,13 @@ my $p_colnamesTranscripts = [
 # Parser method bodies
 # --------------
 # Each method must take these parameters
-#	F: A filehandler with the content
 #	analysis_id: The analysis_id for each entry
-#	mapper: A BP::Loader::Mapper instance
+#	p_insertMethod: We feed this method with the prepared entries
 #####
-sub insert($$$) {
+sub _insertInternal($$) {
 	my $self = shift;
 	
-	return $self->commonInsert($_[0],$_[1],$_[2],$p_colnamesTranscripts,1);
+	return $self->commonInsert($_[0],$_[1],$p_colnamesTranscripts,1);
 }
 
 # This call registers the parser

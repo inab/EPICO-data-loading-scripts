@@ -26,7 +26,7 @@ use constant WIGGLER_METADATA => {
 };
 
 # This is the empty constructor
-sub new(;$$) {
+sub new(;\%) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	

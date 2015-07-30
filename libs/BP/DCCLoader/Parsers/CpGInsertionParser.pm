@@ -31,7 +31,7 @@ use constant CNAG_CPGS_POSTFIX	=>	'bs_cpg';
 #use constant CNAG_CYTOSINES_POSTFIX	=>	'bs_c';
 
 # This is the empty constructor
-sub new(;$$) {
+sub new(;\%) {
 	my($self)=shift;
 	my($class)=ref($self) || $self;
 	
@@ -62,20 +62,13 @@ sub getParsingFeatures() {
 # Parser method bodies
 # --------------
 # Each method must take these parameters
-#	F: A filehandler with the content
 #	analysis_id: The analysis_id for each entry
-#	mapper: A BP::Loader::Mapper instance
+#	p_insertMethod: We feed this method with the prepared entries
 #####
-sub insert($$$) {
+sub _insertInternal($$) {
 	my($self)=shift;
 	
-	my($F,$analysis_id,$mapper) = @_;
-	
-	# UGLY
-	my $BMAX = $mapper->bulkBatchSize();
-	
-	my $numBatch = 0;
-	my @batch = ();
+	my($analysis_id,$p_insertMethod) = @_;
 	
 	my %dlatTxtCpGParserConfig = (
 		TabParser::TAG_CALLBACK => sub {
@@ -113,25 +106,10 @@ sub insert($$$) {
 				'probability'	=>	$probability
 			);
 			
-			push(@batch,\%entry);
-			$numBatch++;
-			
-			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
-			}
+			$p_insertMethod->(\%entry);
 		},
 	);
-	TabParser::parseTab($F,%dlatTxtCpGParserConfig);
-	
-	# Last step
-	if($numBatch > 0) {
-		$mapper->bulkInsert(\@batch);
-		
-		@batch = ();
-	}
+	return \%dlatTxtCpGParserConfig;
 }
 
 # This call registers the parser
