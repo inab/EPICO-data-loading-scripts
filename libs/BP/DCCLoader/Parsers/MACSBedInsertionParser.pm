@@ -112,6 +112,10 @@ sub _insertInternal($$) {
 	
 	my($analysis_id,$p_insertMethod) = @_;
 	
+	my $model = $self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL};
+	my $chroCV = $model->getNamedCV('EnsemblChromosomes');
+	my $termChro = '';
+	my $term = undef;
 	my %macsBedParserConfig = (
 		TabParser::TAG_CALLBACK => sub {
 			my(
@@ -126,31 +130,36 @@ sub _insertInternal($$) {
 				$log10_qvalue, # -log10(qvalue)
 			) = @_;
 			
-			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
-			
-			$chromosome = 'MT'  if($chromosome eq 'M');
-			
-			my $protein_stable_id = ($protein_dna_interaction_id =~ /^[^.]+\.([^.]+)/)?$1:'';
-			
-			
-			my %entry = (
-				'analysis_id'	=>	$analysis_id,
-				'protein_dna_interaction_id'	=>	$protein_dna_interaction_id,
-				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
-				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
-				'rank'	=>	[
-					{
-						'rank'	=>	'fold_enrichment',
-						'value'	=>	$fold_enrichment
-					}
-				],
-				'protein_stable_id'	=>	$protein_stable_id,
-				'log10_pvalue'	=>	$log10_pvalue,
-				'log10_qvalue'	=>	$log10_qvalue,
-			);
-			
-			$p_insertMethod->(\%entry);
+			if($termChro ne $chro) {
+				$termChro = $chro;
+				$term = $chroCV->getTerm($chro);
+				print STDERR "\tdiscarding entries from unknown chromosome $chro\n"  unless($term);
+			}
+			if($term) {
+				my $chromosome = $term->key();
+				
+				my $protein_stable_id = ($protein_dna_interaction_id =~ /^[^.]+\.([^.]+)/)?$1:'';
+				
+				
+				my %entry = (
+					'analysis_id'	=>	$analysis_id,
+					'protein_dna_interaction_id'	=>	$protein_dna_interaction_id,
+					'chromosome'	=>	$chromosome,
+					'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
+					'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
+					'rank'	=>	[
+						{
+							'rank'	=>	'fold_enrichment',
+							'value'	=>	$fold_enrichment
+						}
+					],
+					'protein_stable_id'	=>	$protein_stable_id,
+					'log10_pvalue'	=>	$log10_pvalue,
+					'log10_qvalue'	=>	$log10_qvalue,
+				);
+				
+				$p_insertMethod->(\%entry);
+			}
 		},
 	);
 	return \%macsBedParserConfig;
