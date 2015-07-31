@@ -103,7 +103,7 @@ sub getParsingFeatures() {
 			'bs_hyper',
 			undef,
 			'mr',
-			\&dlatBedHyperMParser,
+			$self,
 			METH_HYPER_METADATA,
 			BP::DCCLoader::Parsers::CpGInsertionParser::CNAG_CPGS_POSTFIX
 		],
