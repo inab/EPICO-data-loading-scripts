@@ -76,15 +76,14 @@ sub insert($$$) {
 	my $p_insertMethod;
 	if(exists($self->{K_TESTMODE()}) && $self->{K_TESTMODE()}) {
 		$p_insertMethod = sub {
-			push(@batch,$_[0]);
-			$numBatch++;
+			eval {
+				$mapper->validateAndEnactEntry($_[0]);
+			};
 			
-			if($numBatch >= $BMAX) {
-				$mapper->validateAndEnactEntry(\@batch);
-				
-				@batch = ();
-				$numBatch = 0;
+			if($@) {
+				print STDERR "DEBUG: WTF! $@\n";
 			}
+			1;
 		};
 	} else {
 		$p_insertMethod = sub {
@@ -92,11 +91,18 @@ sub insert($$$) {
 			$numBatch++;
 			
 			if($numBatch >= $BMAX) {
-				$mapper->bulkInsert(\@batch);
+				eval {
+					$mapper->bulkInsert(\@batch);
+				};
+				
+				if($@) {
+					print STDERR "DEBUG: WTF! $@\n";
+				}
 				
 				@batch = ();
 				$numBatch = 0;
 			}
+			1;
 		};
 	}
 	
@@ -105,10 +111,16 @@ sub insert($$$) {
 	
 	# Last step
 	if($numBatch > 0) {
-		if(exists($self->{K_TESTMODE()}) && $self->{K_TESTMODE()}) {
-			$mapper->validateAndEnactEntry(\@batch);
-		} else {
-			$mapper->bulkInsert(\@batch);
+		eval {
+			if(exists($self->{K_TESTMODE()}) && $self->{K_TESTMODE()}) {
+				$mapper->validateAndEnactEntry(\@batch);
+			} else {
+				$mapper->bulkInsert(\@batch);
+			}
+		};
+		
+		if($@) {
+			print STDERR "DEBUG: WTF! $@\n";
 		}
 		@batch = ();
 	}
