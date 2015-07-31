@@ -60,8 +60,8 @@ sub parseENS($$$$$$$$) {
 				#$fullStableId,
 				'feature_cluster_id'	=> $feature_cluster_id,
 				'chromosome'	=> $p_regionId->{$seq_region_id},
-				'chromosome_start'	=> $chromosome_start,
-				'chromosome_end'	=> $chromosome_end,
+				'chromosome_start'	=> ($chromosome_start+0),
+				'chromosome_end'	=> ($chromosome_end+0),
 				'symbol'	=> \@symbols,
 				'feature'	=> (defined($internal_gene_id)?'transcript':'gene')
 			};

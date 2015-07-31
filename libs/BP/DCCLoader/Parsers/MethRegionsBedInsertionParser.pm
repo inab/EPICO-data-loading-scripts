@@ -45,12 +45,12 @@ sub __dlatBedParser($$$) {
 				'analysis_id'	=>	$analysis_id,
 				'd_lated_fragment_id'	=>	$d_lated_fragment_id,
 				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start,
-				'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
+				'chromosome_start'	=>	$chromosome_start+0,
+				'chromosome_end'	=>	$chromosome_end+0,	# Bed holds the end coordinate as exclusive, so it does not change
 				'total_reads'	=>	$total_reads,
 				'c_total_reads'	=>	($d_lated_reads + $converted_reads),
 				'd_lated_reads'	=>	$d_lated_reads,
-				'meth_level'	=>	$avg_meth_level
+				'meth_level'	=>	$avg_meth_level+0e0,
 				
 			);
 			

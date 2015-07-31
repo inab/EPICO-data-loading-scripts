@@ -97,7 +97,7 @@ sub _insertInternal($$) {
 				'analysis_id'	=>	$analysis_id,
 				#'d_lated_fragment_id'	=>	$d_lated_fragment_id,
 				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start,	# This txt had the coordinates 1-based
+				'chromosome_start'	=>	$chromosome_start+0,	# This txt had the coordinates 1-based
 				#'chromosome_end'	=>	$chromosome_end,
 				'total_reads'	=>	$total_reads,
 				'c_total_reads'	=>	($d_lated_reads + $converted_reads),

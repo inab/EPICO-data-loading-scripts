@@ -82,8 +82,8 @@ sub parseGTF(@) {
 				#$fullEnsemblId,
 				'feature_cluster_id'	=> $attributes{'gene_id'},
 				'chromosome'	=> $term->key(),
-				'chromosome_start'	=> $chromosome_start,
-				'chromosome_end'	=> $chromosome_end,
+				'chromosome_start'	=> ($chromosome_start+0),
+				'chromosome_end'	=> ($chromosome_end+0),
 				'symbol'	=> [$fullEnsemblId,$ensemblId],
 				'feature'	=> $feature
 			};

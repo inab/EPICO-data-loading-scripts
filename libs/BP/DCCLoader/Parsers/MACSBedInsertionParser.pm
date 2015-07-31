@@ -146,16 +146,16 @@ sub _insertInternal($$) {
 					'protein_dna_interaction_id'	=>	$protein_dna_interaction_id,
 					'chromosome'	=>	$chromosome,
 					'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
-					'chromosome_end'	=>	$chromosome_end,	# Bed holds the end coordinate as exclusive, so it does not change
+					'chromosome_end'	=>	$chromosome_end+0,	# Bed holds the end coordinate as exclusive, so it does not change
 					'rank'	=>	[
 						{
 							'rank'	=>	'fold_enrichment',
-							'value'	=>	$fold_enrichment
+							'value'	=>	$fold_enrichment+0e0
 						}
 					],
 					'protein_stable_id'	=>	$protein_stable_id,
-					'log10_pvalue'	=>	$log10_pvalue,
-					'log10_qvalue'	=>	$log10_qvalue,
+					'log10_pvalue'	=>	$log10_pvalue+0e0,
+					'log10_qvalue'	=>	$log10_qvalue+0e0,
 				);
 				
 				$p_insertMethod->(\%entry);
