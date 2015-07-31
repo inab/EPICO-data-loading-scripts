@@ -67,17 +67,6 @@ sub getGencodeCoordinates() {
 
 }
 
-my @CommonKeysDelete = (
-	'gene_id',
-	'transcript_id(s)',
-	'transcript_id',
-	'length',
-	'effective_length',
-	'expected_count',
-	'TPM',
-	'FPKM',
-);
-
 #####
 # Parser method bodies
 # --------------
@@ -85,10 +74,10 @@ my @CommonKeysDelete = (
 #	analysis_id: The analysis_id for each entry
 #	p_insertMethod: We feed this method with the prepared entries
 #####
-sub commonInsert($$\@;$) {
+sub commonInsert($$\@\@\@;$) {
 	my $self = shift;
 	
-	my($analysis_id,$p_insertMethod,$p_colnames,$isTranscript) = @_;
+	my($analysis_id,$p_insertMethod,$p_colnames,$p_baseIndexes,$p_metricsIndexes,$isTranscript) = @_;
 	
 	# Get the Ensembl hash
 	my $p_ensHash = $self->getGencodeCoordinates();
@@ -98,29 +87,31 @@ sub commonInsert($$\@;$) {
 		TabParser::TAG_FETCH_COLS	=>	$p_colnames,
 		TabParser::TAG_CALLBACK => sub {
 			my %metrics = ();
-			@metrics{@{$p_colnames}} = @_;
+			
+			# Normalizing the content
+			@metrics{@{$p_colnames}[@{$p_metricsIndexes}]} = map { $_+0e0 } @_[@{$p_metricsIndexes}];
 			
 			my %entry = (
 				'analysis_id'	=>	$analysis_id,
-				'gene_stable_id'	=>	$metrics{'gene_id'},
-				'length'	=>	$metrics{'length'},
-				'effective_length'	=>	$metrics{'effective_length'},
-				'expected_count'	=>	$metrics{'expected_count'},
-				'TPM'	=>	$metrics{'TPM'},
-				'FPKM'	=>	$metrics{'FPKM'},
 				'is_annotated'	=>	1,
 				'metrics'	=>	\%metrics
 			);
 			
-			# Choosing the ensId
-			my $ensId;
-			if($isTranscript) {
-				$ensId = $entry{'transcript_stable_id'} = $metrics{'transcript_id'};
-			} else {
-				$ensId = $metrics{'gene_id'}
+			my @values = @_[@{$p_baseIndexes}];
+			foreach my $val (@values[1..$#values]) {
+				# Normalizing the content
+				$val += 0e0;
 			}
 			
-			# Remove the revision from the ensId
+			@entry{'gene_stable_id','length','effective_length','expected_count','TPM','FPKM'} = @values;
+			
+			# Choosing the ensId
+			my $ensId;
+			if(defined($isTranscript)) {
+				$ensId = $entry{'transcript_stable_id'} = $_[$isTranscript];
+			} else {
+				$ensId = $entry{'gene_stable_id'};
+			}
 			$ensId = substr($ensId,0,rindex($ensId,'.'));
 			
 			# Now, let's get the chromosomical coordinates
@@ -130,13 +121,13 @@ sub commonInsert($$\@;$) {
 				$entry{'chromosome_start'} = $p_data->{'chromosome_start'};
 				$entry{'chromosome_end'} = $p_data->{'chromosome_end'};
 				
-				# Removing redundant data
-				delete @metrics{@CommonKeysDelete};
-				
 				$p_insertMethod->(\%entry);
 			} else {
+				print STDERR "DEBUGRNA: ",$ensId,"\n";
 				Carp::carp("ERROR: Next entry was rejected as its Ensembl Id does not match with the ones defined\n".join("\t",@{$p_colnames})."\n".join("\t",@_));
 			}
+			
+			1;
 		},
 	);
 	return \%rnaRSemStarGeneParserConfig;
@@ -203,7 +194,7 @@ my $p_colnamesGenes = [
 sub _insertInternal($$) {
 	my $self = shift;
 	
-	return $self->commonInsert($_[0],$_[1],$p_colnamesGenes);
+	return $self->commonInsert($_[0],$_[1],$p_colnamesGenes,[0,2,3,4,5,6],[7..14]);
 }
 
 # This call registers the parser
@@ -272,7 +263,7 @@ my $p_colnamesTranscripts = [
 sub _insertInternal($$) {
 	my $self = shift;
 	
-	return $self->commonInsert($_[0],$_[1],$p_colnamesTranscripts,1);
+	return $self->commonInsert($_[0],$_[1],$p_colnamesTranscripts,[1,2,3,4,5,6],[7..16],0);
 }
 
 # This call registers the parser
