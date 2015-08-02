@@ -107,7 +107,7 @@ sub mirror($;$$) {
 	if(defined($localPath)) {
 		push(@segments,$localPath);
 	} else {
-		my(undef,@segments) = $resourceURI->path_segments();
+		(undef,@segments) = $resourceURI->path_segments();
 	}
 	
 	$ua = LWP::UserAgent->new()  unless(defined($ua));

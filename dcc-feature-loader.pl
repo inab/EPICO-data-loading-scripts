@@ -181,7 +181,9 @@ if(scalar(@ARGV)>=2) {
 	# Fetching HTTP resources
 	print "Connecting to $reactome_http_base...\n";
 	my $reactome_bundle_uri = $reactome_http_base->clone();
-	$reactome_bundle_uri->path_segments($reactome_http_base->path_segments(),$reactome_bundle_file);
+	my @reactSeg = $reactome_http_base->path_segments();
+	pop(@reactSeg)  if($reactSeg[$#reactSeg] eq '');
+	$reactome_bundle_uri->path_segments(@reactSeg,$reactome_bundle_file);
 	
 	my $reactome_bundle_local = $workingDir->mirror($reactome_bundle_uri);
 	
@@ -203,8 +205,8 @@ if(scalar(@ARGV)>=2) {
 	
 	# And now, the pathways!
 	my $localReactomeInteractionsFile = File::Spec->catfile($cachingDir,REACTOME_INTERACTIONS_FILE);
-	print "Parsing ",$localReactomeInteractionsFile,"\n";
-	if(-f $localReactomeInteractionsFile || system('tar','xf',$reactome_bundle_local,'-C',$cachingDir,'--transform=s,^.*/,,','--wildcards','*/'.REACTOME_INTERACTIONS_FILE)==0) {
+	print "Extracting ",$localReactomeInteractionsFile," from $reactome_bundle_local\n";
+	if(-f $localReactomeInteractionsFile || system('tar','-x','-f',$reactome_bundle_local,'-C',$cachingDir,'--transform=s,^.*/,,','--wildcards','*/'.REACTOME_INTERACTIONS_FILE)==0) {
 		if(open(my $REACT,'-|',BP::Loader::Tools::GUNZIP,'-c',$localReactomeInteractionsFile)) {
 			my $reactomeConcept = $model->getConceptDomain('external')->conceptHash->{'reactome'};
 			my $reactomeCorrConcept = BP::Loader::CorrelatableConcept->new($reactomeConcept);
