@@ -1102,7 +1102,7 @@ if(scalar(@ARGV)>=2) {
 	
 	$bpDataServer->disconnect()  if($bpDataServer->can('disconnect'));
 	$bpDataServer->quit()  if($bpDataServer->can('quit'));
-	
+	$LOG->info("Program has finished");
 } else {
 	print STDERR "Usage: $0 [-t|-tt] iniFile cachingDir [",join('|','sdata',sort(keys(%DOMAIN2EXPANAL))),"]\n"
 }
