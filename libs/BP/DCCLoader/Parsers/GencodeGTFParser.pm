@@ -157,7 +157,7 @@ sub getGencodeCoordinates($$$;$) {
 	$ftpServer->quit()  if($ftpServer->can('quit'));
 	$ftpServer = undef;
 	
-	my $chroCV = $model->getNamedCV('EnsemblChromosomes');
+	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
 	my $p_ENShash = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($model,$workingDir,$ini,$testmode);
 	
 	print "Parsing ",$localGTF,"\n";

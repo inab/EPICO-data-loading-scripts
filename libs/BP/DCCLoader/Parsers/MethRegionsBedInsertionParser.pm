@@ -13,10 +13,14 @@ use BP::DCCLoader::Parsers::CpGInsertionParser;
 # This package contains the common methods
 package BP::DCCLoader::Parsers::MethRegionsBedInsertionParser;
 
-sub __dlatBedParser($$$);
+sub __dlatBedParser($$$$);
 
-sub __dlatBedParser($$$) {
-	my($analysis_id,$p_insertMethod,$hyperhypo) = @_;
+sub __dlatBedParser($$$$) {
+	my($analysis_id,$p_insertMethod,$chroCV,$hyperhypo) = @_;
+	
+	my $termChro = '';
+	my $term = undef;
+	my $chromosome = undef;
 	
 	my %dlatBedParserConfig = (
 		TabParser::TAG_CALLBACK => sub {
@@ -34,27 +38,36 @@ sub __dlatBedParser($$$) {
 				undef,	# refGene annotation (union of refGene  annotations for all CpGs in region)
 			) = @_;
 			
-			my $chromosome = (index($chro,'chr')==0)?substr($chro,3):$chro;
+			if($termChro ne $chro) {
+				$termChro = $chro;
+				$term = $chroCV->getTerm($chro);
+				if($term) {
+					$chromosome = $term->key();
+				} else {
+					print STDERR "\tdiscarding entries from unknown chromosome $chro\n";
+					$chromosome = undef;
+				}
+			}
 			
-			$chromosome = 'MT'  if($chromosome eq 'M');
-			
-			$chromosome_start = $chromosome_start+1;	# Bed holds the data 0-based
-			my $d_lated_fragment_id = $hyperhypo.'|'.$chro.'_'.$chromosome_start.'_'.$chromosome_end;
-			
-			my %entry = (
-				'analysis_id'	=>	$analysis_id,
-				'd_lated_fragment_id'	=>	$d_lated_fragment_id,
-				'chromosome'	=>	$chromosome,
-				'chromosome_start'	=>	$chromosome_start+0,
-				'chromosome_end'	=>	$chromosome_end+0,	# Bed holds the end coordinate as exclusive, so it does not change
-				'total_reads'	=>	$total_reads,
-				'c_total_reads'	=>	($d_lated_reads + $converted_reads),
-				'd_lated_reads'	=>	$d_lated_reads,
-				'meth_level'	=>	$avg_meth_level+0e0,
+			if(defined($chromosome)) {
+				$chromosome_start = $chromosome_start+1;	# Bed holds the data 0-based
+				my $d_lated_fragment_id = $hyperhypo.'|'.$chro.'_'.$chromosome_start.'_'.$chromosome_end;
 				
-			);
-			
-			$p_insertMethod->(\%entry);
+				my %entry = (
+					'analysis_id'	=>	$analysis_id,
+					'd_lated_fragment_id'	=>	$d_lated_fragment_id,
+					'chromosome'	=>	$chromosome,
+					'chromosome_start'	=>	$chromosome_start,
+					'chromosome_end'	=>	$chromosome_end+0,	# Bed holds the end coordinate as exclusive, so it does not change
+					'total_reads'	=>	$total_reads,
+					'c_total_reads'	=>	($d_lated_reads + $converted_reads),
+					'd_lated_reads'	=>	$d_lated_reads,
+					'meth_level'	=>	$avg_meth_level+0e0,
+					
+				);
+				
+				$p_insertMethod->(\%entry);
+			}
 		},
 	);
 	return \%dlatBedParserConfig;
@@ -121,7 +134,10 @@ sub getParsingFeatures() {
 sub _insertInternal($$$) {
 	my($self)=shift;
 	
-	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],'hyper');
+	my $model = $self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL};
+	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
+	
+	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],$chroCV,'hyper');
 }
 
 # This call registers the parser
@@ -187,7 +203,10 @@ sub getParsingFeatures() {
 sub _insertInternal($$) {
 	my($self)=shift;
 	
-	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],'hypo');
+	my $model = $self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL};
+	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
+	
+	return BP::DCCLoader::Parsers::MethRegionsBedInsertionParser::__dlatBedParser($_[0],$_[1],$chroCV,'hypo');
 }
 
 # This call registers the parser

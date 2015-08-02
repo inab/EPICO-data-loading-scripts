@@ -302,7 +302,7 @@ sub getEnsemblCoordinates($$$;$) {
 	$ftpServer->quit()  if($ftpServer->can('quit'));
 	$ftpServer = undef;
 	
-	my $chroCV = $model->getNamedCV('EnsemblChromosomes');
+	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
 		
 	return parseEnsemblGenesAndTranscripts($chroCV,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localXref,$testmode);
 }

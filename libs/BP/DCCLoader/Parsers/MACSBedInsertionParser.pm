@@ -113,9 +113,11 @@ sub _insertInternal($$) {
 	my($analysis_id,$p_insertMethod) = @_;
 	
 	my $model = $self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL};
-	my $chroCV = $model->getNamedCV('EnsemblChromosomes');
+	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
 	my $termChro = '';
 	my $term = undef;
+	my $chromosome = undef;
+	
 	my %macsBedParserConfig = (
 		TabParser::TAG_CALLBACK => sub {
 			my(
@@ -133,11 +135,15 @@ sub _insertInternal($$) {
 			if($termChro ne $chro) {
 				$termChro = $chro;
 				$term = $chroCV->getTerm($chro);
-				print STDERR "\tdiscarding entries from unknown chromosome $chro\n"  unless($term);
+				if($term) {
+					$chromosome = $term->key();
+				} else {
+					print STDERR "\tdiscarding entries from unknown chromosome $chro\n";
+					$chromosome = undef;
+				}
 			}
-			if($term) {
-				my $chromosome = $term->key();
-				
+			
+			if(defined($chromosome)) {
 				my $protein_stable_id = ($protein_dna_interaction_id =~ /^[^.]+\.([^.]+)/)?$1:'';
 				
 				
