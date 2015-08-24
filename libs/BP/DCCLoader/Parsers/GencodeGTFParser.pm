@@ -18,6 +18,15 @@ use URI;
 
 package BP::DCCLoader::Parsers::GencodeGTFParser;
 
+use Log::Log4perl;
+
+my $LOG;
+sub BEGIN {
+	Log::Log4perl->easy_init( { level => $Log::Log4perl::WARN, layout => '%-5p - %m%n' } );
+
+	$LOG = Log::Log4perl->get_logger(__PACKAGE__);
+}
+
 use constant {
 	GENCODE_FTP_BASE_TAG	=> 'gencode-ftp-base-uri',
 	GENCODE_GTF_FILE_TAG	=> 'gencode-gtf',
@@ -59,10 +68,10 @@ sub parseGTF(@) {
 	my $p_ensFeatures = undef;
 	if($feature eq 'gene') {
 		$ensIdKey = 'gene_id';
-		$p_ensFeatures = ['gene_name','havana_gene'];
+		$p_ensFeatures = ['gene_id','gene_name','havana_gene'];
 	} else {
-		$ensIdKey = 'transcript_id';
-		$p_ensFeatures = ['transcript_name','havana_transcript','ccdsid'];
+		$ensIdKey = ($feature eq 'transcript' || !exists($attributes{'exon_id'}))? 'transcript_id' : 'exon_id';
+		$p_ensFeatures = ['transcript_id','transcript_name','havana_transcript','exon_id','ccdsid','protein_id'];
 	}
 	
 	my $fullEnsemblId = $attributes{$ensIdKey};
@@ -81,11 +90,16 @@ sub parseGTF(@) {
 			$p_regionData = {
 				#$fullEnsemblId,
 				'feature_cluster_id'	=> $attributes{'gene_id'},
-				'chromosome'	=> $term->key(),
-				'chromosome_start'	=> ($chromosome_start+0),
-				'chromosome_end'	=> ($chromosome_end+0),
-				'symbol'	=> [$fullEnsemblId,$ensemblId],
-				'feature'	=> $feature
+				'feature'	=> $feature,
+				'coordinates'	=> [
+					{
+						'feature_id'	=> $fullEnsemblId,
+						'chromosome'	=> $term->key(),
+						'chromosome_start'	=> ($chromosome_start+0),
+						'chromosome_end'	=> ($chromosome_end+0),
+					}
+				],
+				'symbol'	=> [$ensemblId],
 			};
 		#} else {
 		#	print STDERR "DEBUG CHRO: $chro\n";
@@ -94,7 +108,20 @@ sub parseGTF(@) {
 	
 	if($p_regionData) {
 		foreach my $ensFeature (@{$p_ensFeatures}) {
-			push(@{$p_regionData->{symbol}},$attributes{$ensFeature})  if(exists($attributes{$ensFeature}));
+			if(exists($attributes{$ensFeature})) {
+				my $val = $attributes{$ensFeature};
+				unless($local) {
+					# Inefficient, but effective
+					foreach my $sym (@{$p_regionData->{symbol}}) {
+						if($sym eq $val) {
+							$val = undef;
+							
+							last;
+						}
+					}
+				}
+				push(@{$p_regionData->{symbol}},$attributes{$ensFeature})  if(defined($val));
+			}
 		}
 		
 		# Last, save it!!!
@@ -141,7 +168,7 @@ sub getGencodeCoordinates($$$;$) {
 	# Defined outside
 	my $ftpServer = undef;
 	
-	print "Connecting to $gencode_ftp_base...\n";
+	$LOG->info("Connecting to $gencode_ftp_base...");
 	my $gencodeHost = $gencode_ftp_base->host();
 	$ftpServer = Net::FTP::AutoReconnect->new($gencodeHost,Debug=>0) || Carp::croak("FTP connection to server ".$gencodeHost." failed: ".$@);
 	$ftpServer->login(BP::DCCLoader::WorkingDir::ANONYMOUS_USER,BP::DCCLoader::WorkingDir::ANONYMOUS_PASS) || Carp::croak("FTP login to server $gencodeHost failed: ".$ftpServer->message());
@@ -160,7 +187,7 @@ sub getGencodeCoordinates($$$;$) {
 	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
 	my $p_ENShash = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($model,$workingDir,$ini,$testmode);
 	
-	print "Parsing ",$localGTF,"\n";
+	$LOG->info("Parsing ".$localGTF);
 	my @Gencode = ();
 	my %PAR = ();
 	if(open(my $GTF,'-|',BP::Loader::Tools::GUNZIP,'-c',$localGTF)) {

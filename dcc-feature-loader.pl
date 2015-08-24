@@ -15,6 +15,7 @@ use Carp;
 use File::Basename;
 use File::Spec;
 use IO::Handle;
+use Log::Log4perl;
 use Net::FTP::AutoReconnect;
 use URI;
 
@@ -32,18 +33,50 @@ use BP::DCCLoader::Parsers::GencodeGTFParser;
 
 use TabParser;
 
+my $LOG;
+BEGIN {
+	Log::Log4perl->easy_init( { level => $Log::Log4perl::INFO, layout => "[%d{ISO8601}]%p %m%n" } );
+	$LOG = Log::Log4perl->get_logger(__PACKAGE__);
+};
+
 use constant {
 	REACTOME_BASE_TAG	=> 'reactome-base-uri',
 	REACTOME_BUNDLE_TAG	=> 'reactome-bundle',
 	REACTOME_INTERACTIONS_FILE	=> 'homo_sapiens.interactions.txt.gz',
+	REACTOME_PATHWAYS_FILE	=> 'Ensembl2Reactome_All_Levels.txt',
 };
 
 sub parseReactomeInteractions($$$$$);
+sub parseReactomePathways($$$$);
 
 #####
 # Method bodies
 #####
 my @TRANSKEYS = ('chromosome','chromosome_start','chromosome_end');
+
+
+sub parseReactomePathways($$$$) {
+	my($payload,$participantId,$stablePathwayId,$pathwayName)=@_;
+	
+	my($p_ENShash,$p_pathways)=@{$payload};
+	
+	if(exists($p_ENShash->{$participantId})) {
+		$p_pathways->{$stablePathwayId} = {
+			'feature_cluster_id'	=> $stablePathwayId,
+			'feature'	=> 'pathway',
+			'coordinates'	=> [],
+			'symbol'	=> [$stablePathwayId,$pathwayName],
+		}  unless(exists($p_pathways->{$stablePathwayId}));
+		
+		my $participant = { 'feature_id' => $participantId };
+		
+		@{$participant}{@TRANSKEYS} = @{$p_ENShash->{$participantId}{'coordinates'}[0]}{@TRANSKEYS};
+		
+		push(@{$p_pathways->{$stablePathwayId}{'coordinates'}},$participant);
+	}
+	
+	1;
+}
 
 sub parseReactomeInteractions($$$$$) {
 	my($payload,$left,$right,$pathway_id,$type)=@_;
@@ -60,15 +93,17 @@ sub parseReactomeInteractions($$$$$) {
 				$p_foundInter->{$pathway_id}{$ensId} = undef;
 				
 				$p_pathways->{$pathway_id} = {
-					'pathway_id'	=> $pathway_id,
-					'participants'	=> [],
+					'feature_cluster_id'	=> $pathway_id,
+					'feature'	=> 'reaction',
+					'coordinates'	=> [],
+					'symbol'	=> [$pathway_id],
 				}  unless(exists($p_pathways->{$pathway_id}));
 				
-				my $participant = { 'participant_id' => $ensId };
+				my $participant = { 'feature_id' => $ensId };
 				
-				@{$participant}{@TRANSKEYS} = @{$p_ENShash->{$ensId}}{@TRANSKEYS}  if(exists($p_ENShash->{$ensId}));
+				@{$participant}{@TRANSKEYS} = @{$p_ENShash->{$ensId}{'coordinates'}[0]}{@TRANSKEYS}  if(exists($p_ENShash->{$ensId}));
 				
-				push(@{$p_pathways->{$pathway_id}{'participants'}},$participant);
+				push(@{$p_pathways->{$pathway_id}{'coordinates'}},$participant);
 			}
 		}
 	}
@@ -83,7 +118,7 @@ my $testmode = undef;
 if(scalar(@ARGV)>0 && $ARGV[0] eq '-t') {
 	$testmode = 1;
 	shift(@ARGV);
-	print "* [TESTMODE] Enabled test mode (only validating data)\n";
+	$LOG->info("* [TESTMODE] Enabled test mode (only validating data)");
 }
 
 if(scalar(@ARGV)>=2) {
@@ -124,7 +159,7 @@ if(scalar(@ARGV)>=2) {
 	# Setting up the right path on relative cases
 	$modelFile = File::Spec->catfile(File::Basename::dirname($iniFile),$modelFile)  unless(File::Spec->file_name_is_absolute($modelFile));
 
-	print "Parsing model $modelFile...\n";
+	$LOG->info("Parsing model $modelFile...");
 	my $model = undef;
 	eval {
 		$model = BP::Model->new($modelFile);
@@ -133,7 +168,7 @@ if(scalar(@ARGV)>=2) {
 	if($@) {
 		Carp::croak('ERROR: Model parsing and validation failed. Reason: '.$@);
 	}
-	print "\tDONE!\n";
+	$LOG->info("\tDONE!");
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
 	eval {
@@ -157,7 +192,7 @@ if(scalar(@ARGV)>=2) {
 		}
 	}
 	
-	my $concept = $model->getConceptDomain('external')->conceptHash->{'gencode'};
+	my $concept = $model->getConceptDomain('external')->conceptHash->{'features'};
 	my $corrConcept = BP::Loader::CorrelatableConcept->new($concept);
 	
 	my @mappers = @storageModels{@loadModels};
@@ -165,9 +200,9 @@ if(scalar(@ARGV)>=2) {
 	if(!$ini->exists($BP::Loader::Mapper::SECTION,'metadata-loaders') || $ini->val($BP::Loader::Mapper::SECTION,'metadata-loaders') eq 'true') {
 		foreach my $mapper (@mappers) {
 			if($testmode) {
-				print "\t [TESTMODE] Skipping storage of metadata model\n";
+				$LOG->info("\t [TESTMODE] Skipping storage of metadata model");
 			} else {
-				print "\t* Storing native model\n";
+				$LOG->info("\t* Storing native model");
 				$mapper->storeNativeModel();
 			}
 			
@@ -179,7 +214,7 @@ if(scalar(@ARGV)>=2) {
 	my $workingDir = BP::DCCLoader::WorkingDir->new($cachingDir);
 	
 	# Fetching HTTP resources
-	print "Connecting to $reactome_http_base...\n";
+	$LOG->info("Connecting to $reactome_http_base...");
 	my $reactome_bundle_uri = $reactome_http_base->clone();
 	my @reactSeg = $reactome_http_base->path_segments();
 	pop(@reactSeg)  if($reactSeg[$#reactSeg] eq '');
@@ -196,30 +231,61 @@ if(scalar(@ARGV)>=2) {
 			$mapper->bulkInsert($p_Gencode);
 			$mapper->bulkInsert(values(%{$p_ENShash}));
 		} else {
-			print "[TESTMODE] Skipping storage of remaining gene and transcript coordinates\n";
+			$LOG->info("[TESTMODE] Skipping storage of remaining gene and transcript coordinates");
 			$mapper->validateAndEnactEntry($p_Gencode);
 			$mapper->validateAndEnactEntry(values(%{$p_ENShash}));
 		}
-		$mapper->freeDestination();
+		#$mapper->freeDestination();
 	}
 	
 	# And now, the pathways!
 	my $localReactomeInteractionsFile = File::Spec->catfile($cachingDir,REACTOME_INTERACTIONS_FILE);
-	print "Extracting ",$localReactomeInteractionsFile," from $reactome_bundle_local\n";
-	if(-f $localReactomeInteractionsFile || system('tar','-x','-f',$reactome_bundle_local,'-C',$cachingDir,'--transform=s,^.*/,,','--wildcards','*/'.REACTOME_INTERACTIONS_FILE)==0) {
-		if(open(my $REACT,'-|',BP::Loader::Tools::GUNZIP,'-c',$localReactomeInteractionsFile)) {
-			my $reactomeConcept = $model->getConceptDomain('external')->conceptHash->{'reactome'};
-			my $reactomeCorrConcept = BP::Loader::CorrelatableConcept->new($reactomeConcept);
-			foreach my $mapper (@mappers) {
-				$mapper->setDestination($reactomeCorrConcept);
-			}
-			
+	my $localReactomePathwaysFile = File::Spec->catfile($cachingDir,REACTOME_PATHWAYS_FILE);
+	$LOG->info("Extracting $localReactomeInteractionsFile and $localReactomePathwaysFile from $reactome_bundle_local");
+	if((-f $localReactomeInteractionsFile && -f $localReactomePathwaysFile) || system('tar','-x','-f',$reactome_bundle_local,'-C',$cachingDir,'--transform=s,^.*/,,','--wildcards','*/'.REACTOME_INTERACTIONS_FILE,'*/'.REACTOME_PATHWAYS_FILE)==0) {
+		$LOG->info("Parsing ".$localReactomePathwaysFile);
+		if(open(my $REACTPATH,'<',$localReactomePathwaysFile)) {
 			my %pathways = ();
+			
+			my %config = (
+				TabParser::TAG_CONTEXT	=> [$p_ENShash,\%pathways],
+				TabParser::TAG_CALLBACK => \&parseReactomePathways,
+				TabParser::TAG_FOLLOW	=> 1,	# We had to add it in order to avoid crap from Reactome generators
+				TabParser::TAG_FETCH_COLS => [0,1,3],
+			);
+			$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
+			TabParser::parseTab($REACTPATH,%config);
+			
+			close($REACTPATH);
+			
+			foreach my $mapper (@mappers) {
+				unless($testmode) {
+					$mapper->bulkInsert(values(%pathways));
+				} else {
+					$LOG->info("[TESTMODE] Skipping storage of pathways mappings");
+					my $entorp = $mapper->validateAndEnactEntry(values(%pathways));
+				}
+			}
+		} else {
+			Carp::croak("ERROR: Unable to open Reactome pathways file ".$localReactomePathwaysFile);
+		}
+		
+		$LOG->info("Parsing ".$localReactomeInteractionsFile);
+		if(open(my $REACT,'-|',BP::Loader::Tools::GUNZIP,'-c',$localReactomeInteractionsFile)) {
+			# Pathways are also stored in features
+			
+			#my $reactomeConcept = $model->getConceptDomain('external')->conceptHash->{'reactome'};
+			#my $reactomeCorrConcept = BP::Loader::CorrelatableConcept->new($reactomeConcept);
+			#foreach my $mapper (@mappers) {
+			#	$mapper->setDestination($reactomeCorrConcept);
+			#}
+			
+			my %reactions = ();
 			my %foundInter = ();
 			
 			my %config = (
 				TabParser::TAG_COMMENT	=>	'#',
-				TabParser::TAG_CONTEXT	=> [$p_ENShash,\%pathways,\%foundInter],
+				TabParser::TAG_CONTEXT	=> [$p_ENShash,\%reactions,\%foundInter],
 				TabParser::TAG_CALLBACK => \&parseReactomeInteractions,
 				#TabParser::TAG_ERR_CALLBACK => \&parseReactomeInteractions,
 				TabParser::TAG_NUM_COLS	=> 9,	# We had to add it in order to avoid crap from Reactome generators
@@ -236,10 +302,10 @@ if(scalar(@ARGV)>=2) {
 			
 			foreach my $mapper (@mappers) {
 				unless($testmode) {
-					$mapper->bulkInsert(values(%pathways));
+					$mapper->bulkInsert(values(%reactions));
 				} else {
-					print "[TESTMODE] Skipping storage of pathways mappings\n";
-					my $entorp = $mapper->validateAndEnactEntry(values(%pathways));
+					$LOG->info("[TESTMODE] Skipping storage of reactions mappings");
+					my $entorp = $mapper->validateAndEnactEntry(values(%reactions));
 				}
 				$mapper->freeDestination();
 			}
@@ -249,13 +315,13 @@ if(scalar(@ARGV)>=2) {
 	} elsif ($? == -1) {
 		Carp::croak("failed to execute: $!");
 	} elsif ($? & 127) {
-		printf STDERR "child died with signal %d, %s coredump\n", ($? & 127),  ($? & 128) ? 'with' : 'without';
+		$LOG->error(sprintf("child died with signal %d, %s coredump\n", ($? & 127),  ($? & 128) ? 'with' : 'without'));
 		exit 1;
 	} else {
-		printf STDERR "child exited with value %d\n", $? >> 8;
+		$LOG->error(sprintf("child exited with value %d\n", $? >> 8));
 		exit 1;
 	}
-	
+	$LOG->info("Program has finished");
 } else {
 	print STDERR "Usage: $0 [-t] iniFile cachingDir\n"
 }

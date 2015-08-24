@@ -18,6 +18,15 @@ use URI;
 
 package BP::DCCLoader::Parsers::EnsemblGTParser;
 
+use Log::Log4perl;
+
+my $LOG;
+sub BEGIN {
+	Log::Log4perl->easy_init( { level => $Log::Log4perl::WARN, layout => '%-5p - %m%n' } );
+
+	$LOG = Log::Log4perl->get_logger(__PACKAGE__);
+}
+
 use constant {
 	ENSEMBL_SQL_FILE	=> 'homo_sapiens_core_{EnsemblVer}_{GRChVer}.sql.gz',
 	ENSEMBL_SEQ_REGION_FILE	=> 'seq_region.txt.gz',
@@ -59,11 +68,16 @@ sub parseENS($$$$$$$$) {
 			$parsedData = {
 				#$fullStableId,
 				'feature_cluster_id'	=> $feature_cluster_id,
-				'chromosome'	=> $p_regionId->{$seq_region_id},
-				'chromosome_start'	=> ($chromosome_start+0),
-				'chromosome_end'	=> ($chromosome_end+0),
+				'feature'	=> (defined($internal_gene_id)?'transcript':'gene'),
+				'coordinates'	=> [
+					{
+						'feature_id'	=> $fullStableId,
+						'chromosome'	=> $p_regionId->{$seq_region_id},
+						'chromosome_start'	=> ($chromosome_start+0),
+						'chromosome_end'	=> ($chromosome_end+0),
+					}
+				],
 				'symbol'	=> \@symbols,
-				'feature'	=> (defined($internal_gene_id)?'transcript':'gene')
 			};
 			$p_ENShash->{$stable_id} = $parsedData;
 			$p_geneMap->{$internal_id} = $parsedData  unless(defined($internal_gene_id));
@@ -126,7 +140,7 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 	# This hash holds the seq_region_id -> name correspondence
 	my %regionId = ();
 	
-	print "Parsing ",$localSeqRegion,"\n";
+	$LOG->info("Parsing ".$localSeqRegion);
 	if(open(my $SEQREG,'-|',BP::Loader::Tools::GUNZIP,'-c',$localSeqRegion)) {
 		my %config = (
 			TabParser::TAG_CONTEXT	=> [\%regionId,$chroCV],
@@ -149,7 +163,7 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 	
 	my %geneMap;
 	
-	print "Parsing ",$localGenes,"\n";
+	$LOG->info("Parsing ".$localGenes);
 	if(open(my $ENSG,'-|',BP::Loader::Tools::GUNZIP,'-c',$localGenes)) {
 		my %config = (
 			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV],
@@ -183,7 +197,7 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 		Carp::croak("ERROR: Unable to parse EnsEMBL Genes file ".$localGenes);
 	}
 	
-	print "Parsing ",$localTranscripts,"\n";
+	$LOG->info("Parsing ".$localTranscripts);
 	if(open(my $ENST,'-|',BP::Loader::Tools::GUNZIP,'-c',$localTranscripts)) {
 		my %config = (
 			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV],
@@ -223,7 +237,7 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 	%regionId = ();
 	%geneMap = ();
 	
-	print "Parsing ",$localXref,"\n";
+	$LOG->info("Parsing ".$localXref);
 	if(open(my $XREF,'-|',BP::Loader::Tools::GUNZIP,'-c',$localXref)) {
 		my %config = (
 			TabParser::TAG_CONTEXT	=> \%ENSintHash,
@@ -281,7 +295,7 @@ sub getEnsemblCoordinates($$$;$) {
 	my $ftpServer = undef;
 	
 	# Fetching FTP resources
-	print "Connecting to $ensembl_ftp_base...\n";
+	$LOG->info("Connecting to $ensembl_ftp_base...");
 	
 	my $ensemblHost = $ensembl_ftp_base->host();
 	$ftpServer = Net::FTP::AutoReconnect->new($ensemblHost,Debug=>0) || Carp::croak("FTP connection to server ".$ensemblHost." failed: ".$@);
