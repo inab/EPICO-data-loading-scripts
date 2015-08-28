@@ -39,7 +39,6 @@ sub _cachedGet($$$) {
 	if(-f $localPath) {
 		my($localsize,$localdate) = ( stat($localPath) )[7,9];
 		$mirrored = $filedate == $localdate && $filesize == $localsize;
-		#print "DEBUGLO: $filedate $localdate $filesize $localsize\n"  unless($mirrored);
 	}
 	
 	unless($mirrored) {

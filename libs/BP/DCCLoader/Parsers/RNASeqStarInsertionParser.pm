@@ -117,9 +117,10 @@ sub commonInsert($$\@\@\@;$) {
 			# Now, let's get the chromosomical coordinates
 			if(exists($p_ensHash->{$ensId})) {
 				my $p_data = $p_ensHash->{$ensId};
-				$entry{'chromosome'} = $p_data->{'chromosome'};
-				$entry{'chromosome_start'} = $p_data->{'chromosome_start'};
-				$entry{'chromosome_end'} = $p_data->{'chromosome_end'};
+				my $p_coordinates = $p_data->{'coordinates'}[0];
+				$entry{'chromosome'} = $p_coordinates->{'chromosome'};
+				$entry{'chromosome_start'} = $p_coordinates->{'chromosome_start'};
+				$entry{'chromosome_end'} = $p_coordinates->{'chromosome_end'};
 				
 				$p_insertMethod->(\%entry);
 			} else {
