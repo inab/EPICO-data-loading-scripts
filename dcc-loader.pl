@@ -85,6 +85,7 @@ use constant PUBLIC_INDEX_COLS => [
 	
 	# sdata_sample
 	'SAMPLE_ID',	# sample_id
+	'SAMPLE_NAME',	# sample_name
 	'SAMPLE_ONTOLOGY_URI',	# purified_cell_type, it contains the URI of CellOntology term
 	# culture_conditions comes from IHEC metadata (CULTURE_CONDITIONS)
 	# markers comes from IHEC metadata (MARKERS)
@@ -193,6 +194,7 @@ sub data_files_callback {
 		$specimen_biomaterial_id,
 		
 		$sample_id,
+		$sample_name,
 		$purified_cell_type_uri,
 		$analyzed_sample_type_other,
 		
@@ -297,6 +299,7 @@ sub public_results_callback {
 		$specimen_biomaterial_id,
 		
 		$sample_id,
+		$sample_name,
 		$purified_cell_type_uri,
 		$analyzed_sample_type_other,
 		
@@ -459,6 +462,7 @@ sub public_results_callback {
 		
 		my %sample = (
 			'sample_id'	=>	$sample_id,
+			'sample_name'	=>	$sample_name,
 			'purified_cell_type'	=>	$purified_cell_type,
 			'culture_conditions'	=>	exists($p_IHECsample->{CULTURE_CONDITIONS})?$p_IHECsample->{CULTURE_CONDITIONS}:undef,
 			'markers'	=>	exists($p_IHECsample->{MARKERS})?$p_IHECsample->{MARKERS}:undef,
