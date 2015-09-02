@@ -616,6 +616,22 @@ if(scalar(@ARGV)>0) {
 	}
 }
 
+my $skipmode = undef;
+if(scalar(@ARGV)>0) {
+	if(index($ARGV[0],'-s')==0) {
+		my $skipmodeText;
+		if(index($ARGV[0],'-ss')==0) {
+			$skipmode = 2;
+			$skipmodeText = 'analysis metadata and primary data';
+		} else {
+			$skipmode = 1;
+			$skipmodeText = 'only primary data';
+		}
+		$LOG->info("* [TESTMODE] Enabled skip mode, level $skipmode ($skipmodeText)");
+		shift(@ARGV);
+	}
+}
+
 if(scalar(@ARGV)>=2) {
 	STDOUT->autoflush(1);
 	STDERR->autoflush(1);
@@ -1016,6 +1032,8 @@ if(scalar(@ARGV)>=2) {
 						$bulkData = undef;
 						$entorp = undef;
 						
+						next  if(defined($skipmode) && $skipmode==2);
+						
 						foreach my $analDomain (@{$p_analDomains}) {
 							if(exists($anal{$analDomain})) {
 								my $conceptDomain = $model->getConceptDomain($analDomain);
@@ -1039,6 +1057,8 @@ if(scalar(@ARGV)>=2) {
 									$mapper->freeDestination();
 									$bulkData = undef;
 									$entorp = undef;
+									
+									next  if(defined($skipmode));
 									
 									# And here the different bulk load
 									if(exists($primary_anal{$analDomain})) {
@@ -1108,5 +1128,5 @@ if(scalar(@ARGV)>=2) {
 	$bpDataServer->quit()  if($bpDataServer->can('quit'));
 	$LOG->info("Program has finished");
 } else {
-	print STDERR "Usage: $0 [-t|-tt] iniFile cachingDir [",join('|','sdata',sort(keys(%DOMAIN2EXPANAL))),"]\n"
+	print STDERR "Usage: $0 [-t|-tt] [-s|-ss] iniFile cachingDir [",join('|','sdata',sort(keys(%DOMAIN2EXPANAL))),"]\n"
 }
