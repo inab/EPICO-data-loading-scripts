@@ -324,7 +324,7 @@ sub public_results_callback {
 			$donor_id = $pool_id;
 			$donor_kind = 'p';
 		} else {
-			Carp::croak("Unable to identify the kind of donor");
+			$LOG->logdie("Unable to identify the kind of donor");
 		}
 	} else {
 		$donor_kind = 'd';
@@ -409,7 +409,7 @@ sub public_results_callback {
 			$specimen_term = $payload->{cellSpecimenTerm}{$cell_line};
 		}
 		
-		Carp::croak("Undefined specimen term for $specimen_id!!!!")  unless(defined($specimen_term));
+		$LOG->logdie("Undefined specimen term for $specimen_id!!!!")  unless(defined($specimen_term));
 		
 		$p_IHECsample = parseIHECsample($payload->{bpDataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir});
 		my %specimen = (
@@ -511,7 +511,7 @@ sub public_results_callback {
 		&data_files_callback(@_);
 		
 	} else {
-		Carp::carp("Unknown type of experiment: ".$library_strategy);
+		$LOG->logwarn("Unknown type of experiment: ".$library_strategy);
 	}
 }
 
@@ -546,7 +546,7 @@ sub parseIHECsample($$$$) {
 		
 		$ihec->close();
 	} else {
-		Carp::carp("Unable to fetch metadata file about sample $sample_id");
+		$LOG->logwarn("Unable to fetch metadata file about sample $sample_id");
 	}
 	
 	return \%IHECsample;
@@ -594,41 +594,44 @@ sub parseIHECexperiment($$$$) {
 		
 		$ihec->close();
 	} else {
-		Carp::carp("Unable to fetch metadata file about experiment $experiment_id");
+		$LOG->logwarn("Unable to fetch metadata file about experiment $experiment_id");
 	}
 	
 	return (\%IHECexperiment,$library_strategy,$instrument_model);
 }
 
 my $testmode = undef;
-if(scalar(@ARGV)>0) {
-	if(index($ARGV[0],'-t')==0) {
-		my $testmodeText;
-		if(index($ARGV[0],'-tt')==0) {
-			$testmode = 2;
-			$testmodeText = 'only validating, both data and metadata';
-		} else {
-			$testmode = 1;
-			$testmodeText = 'only validating metadata, and skipping parsing big data';
-		}
-		$LOG->info("* [TESTMODE] Enabled test mode, level $testmode ($testmodeText)");
-		shift(@ARGV);
-	}
-}
-
 my $skipmode = undef;
-if(scalar(@ARGV)>0) {
-	if(index($ARGV[0],'-s')==0) {
-		my $skipmodeText;
-		if(index($ARGV[0],'-ss')==0) {
-			$skipmode = 2;
-			$skipmodeText = 'analysis metadata and primary data';
+my $doCheck = 1;
+while($doCheck) {
+	if(scalar(@ARGV)>0) {
+		if(index($ARGV[0],'-s')==0) {
+			my $skipmodeText;
+			if(index($ARGV[0],'-ss')==0) {
+				$skipmode = 2;
+				$skipmodeText = 'analysis metadata and primary data';
+			} else {
+				$skipmode = 1;
+				$skipmodeText = 'only primary data';
+			}
+			$LOG->info("* [TESTMODE] Enabled skip mode, level $skipmode ($skipmodeText)");
+			shift(@ARGV);
+		} elsif(index($ARGV[0],'-t')==0) {
+			my $testmodeText;
+			if(index($ARGV[0],'-tt')==0) {
+				$testmode = 2;
+				$testmodeText = 'only validating, both data and metadata';
+			} else {
+				$testmode = 1;
+				$testmodeText = 'only validating metadata, and skipping parsing big data';
+			}
+			$LOG->info("* [TESTMODE] Enabled test mode, level $testmode ($testmodeText)");
+			shift(@ARGV);
 		} else {
-			$skipmode = 1;
-			$skipmodeText = 'only primary data';
+			$doCheck = undef;
 		}
-		$LOG->info("* [TESTMODE] Enabled skip mode, level $skipmode ($skipmodeText)");
-		shift(@ARGV);
+	} else {
+		$doCheck = undef;
 	}
 }
 
@@ -641,7 +644,7 @@ if(scalar(@ARGV)>=2) {
 	my $cachingDir = shift(@ARGV);
 	my $modelDomain = shift(@ARGV);
 	
-	Carp::croak('ERROR: Unknown knowledge domain '.$modelDomain)  if(defined($modelDomain) && $modelDomain ne 'sdata' && !exists($DOMAIN2EXPANAL{$modelDomain}));
+	$LOG->logdie('ERROR: Unknown knowledge domain '.$modelDomain)  if(defined($modelDomain) && $modelDomain ne 'sdata' && !exists($DOMAIN2EXPANAL{$modelDomain}));
 	
 
 
@@ -715,39 +718,39 @@ if(scalar(@ARGV)>=2) {
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'protocol')) {
 		$protocol = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'protocol');
 	} else {
-		Carp::croak("Configuration file $iniFile must have 'protocol'");
+		$LOG->logdie("Configuration file $iniFile must have 'protocol'");
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'host')) {
 		$host = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'host');
 	} else {
-		Carp::croak("Configuration file $iniFile must have 'host'");
+		$LOG->logdie("Configuration file $iniFile must have 'host'");
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'user')) {
 		$user = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'user');
 	} else {
 		$user = 'ftp'  if($protocol eq 'ftp');
-		Carp::croak("Configuration file $iniFile must have 'user'");
+		$LOG->logdie("Configuration file $iniFile must have 'user'");
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'pass')) {
 		$pass = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'pass');
 	} else {
 		$pass = ($user eq 'ftp')?'guest@':''  if($protocol eq 'ftp');
-		Carp::croak("Configuration file $iniFile must have 'pass'");
+		$LOG->logdie("Configuration file $iniFile must have 'pass'");
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'index-path')) {
 		$indexPath = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'index-path');
 	} else {
-		Carp::croak("Configuration file $iniFile must have 'index-path'");
+		$LOG->logdie("Configuration file $iniFile must have 'index-path'");
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-path')) {
 		$metadataPath = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-path');
 	} else {
-		Carp::croak("Configuration file $iniFile must have 'metadata-path'");
+		$LOG->logdie("Configuration file $iniFile must have 'metadata-path'");
 	}
 	
 	my $publicIndex;
@@ -779,17 +782,17 @@ if(scalar(@ARGV)>=2) {
 	# Defined outside
 	$bpDataServer = undef;
 	if($protocol eq 'ftp') {
-		$bpDataServer = Net::FTP::AutoReconnect->new($host,Debug=>0) || Carp::croak("FTP connection to server $host failed: ".$@);
-		$bpDataServer->login($user,$pass) || Carp::croak("FTP login to server $host failed: ".$bpDataServer->message());
+		$bpDataServer = Net::FTP::AutoReconnect->new($host,Debug=>0) || $LOG->logdie("FTP connection to server $host failed: ".$@);
+		$bpDataServer->login($user,$pass) || $LOG->logdie("FTP login to server $host failed: ".$bpDataServer->message());
 		$bpDataServer->binary();
 		
 	} elsif($protocol eq 'sftp') {
-		Carp::croak("Unfinished protocol $protocol. Ask the developers to finish it");
+		$LOG->logdie("Unfinished protocol $protocol. Ask the developers to finish it");
 		
 		$bpDataServer = Net::SFTP::Foreign->new('host' => $host,'user' => $user,'password' => $pass,'fs_encoding' => 'utf8');
 		$bpDataServer->die_on_error("SSH connection to server $host failed");
 	} else {
-		Carp::croak("Unknown protocol $protocol");
+		$LOG->logdie("Unknown protocol $protocol");
 	}
 	
 	my $localIndexPath = $workingDir->cachedGet($bpDataServer,$indexPath.'/'.$publicIndex);
@@ -815,14 +818,14 @@ if(scalar(@ARGV)>=2) {
 		};
 		
 		if($@) {
-			Carp::croak('ERROR: Model parsing and validation failed. Reason: '.$@);
+			$LOG->logdie('ERROR: Model parsing and validation failed. Reason: '.$@);
 		}
 		$LOG->info("\tDONE!");
 
 		my %storageModels = ();
 		
 		# Setting up the loader storage model(s)
-		Carp::croak('ERROR: undefined destination storage model')  unless($ini->exists($BP::Loader::Mapper::SECTION,'loaders'));
+		$LOG->logdie('ERROR: undefined destination storage model')  unless($ini->exists($BP::Loader::Mapper::SECTION,'loaders'));
 		my $loadModelNames = $ini->val($BP::Loader::Mapper::SECTION,'loaders');
 		
 		my @loadModels = ();
@@ -854,7 +857,7 @@ if(scalar(@ARGV)>=2) {
 				TabParser::parseTab($E2D,%e2dConfig);
 				close($E2D);
 			} else {
-				Carp::croak("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
+				$LOG->logdie("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
 			}
 		} else {
 			$LOG->warn("$exp2datasets unavailable. raw_data_accession subfields will be empty");
@@ -894,7 +897,7 @@ if(scalar(@ARGV)>=2) {
 			TabParser::parseTab($PSI,%indexConfig);
 			close($PSI);
 		} else {
-			Carp::croak("Unable to parse $localIndexPath, the main metadata holder");
+			$LOG->logdie("Unable to parse $localIndexPath, the main metadata holder");
 		}
 
 		$LOG->info("Parsing $dataIndex...");
@@ -911,7 +914,7 @@ if(scalar(@ARGV)>=2) {
 			TabParser::parseTab($DFI,%indexConfig);
 			close($DFI);
 		} else {
-			Carp::croak("Unable to parse $localDataFilesIndexPath, the accessory metadata holder");
+			$LOG->logdie("Unable to parse $localDataFilesIndexPath, the accessory metadata holder");
 		}
 
 		
@@ -1093,20 +1096,20 @@ if(scalar(@ARGV)>=2) {
 															};
 															
 															if($@) {
-																Carp::carp("Errors while processing $remote_file: ".$@);
+																$LOG->logwarn("Errors while processing $remote_file: ".$@);
 															}
 														} else {
 															$LOG->info("\t[TESTMODE] Skipping storage of ".$corrConcepts{$conceptName}->concept->fullname." ($local_file)");
 														}
 														close($F);
 													} else {
-														Carp::carp("File $local_file (fetched from $remote_file) not processed. Reason: ".$!);
+														$LOG->logwarn("File $local_file (fetched from $remote_file) not processed. Reason: ".$!);
 													}
 													
 													# At the end, free space of the huge downloaded file
 													unlink($local_file);
 												} else {
-													Carp::carp("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
+													$LOG->logwarn("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
 												}
 											}
 											
@@ -1121,7 +1124,7 @@ if(scalar(@ARGV)>=2) {
 			}
 		}
 	} elsif(!defined($localIndexPath)) {
-		Carp::croak("FATAL ERROR: Unable to fetch index from $indexPath (host $host)");
+		$LOG->logdie("FATAL ERROR: Unable to fetch index from $indexPath (host $host)");
 	}
 	
 	$bpDataServer->disconnect()  if($bpDataServer->can('disconnect'));

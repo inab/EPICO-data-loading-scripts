@@ -14,6 +14,8 @@ use Net::FTP::AutoReconnect;
 
 package BP::DCCLoader::WorkingDir;
 
+use Log::Log4perl;
+
 use constant {
 	ANONYMOUS_USER	=> 'ftp',
 	ANONYMOUS_PASS	=> 'guest@',
@@ -24,8 +26,9 @@ use constant {
 #	remotePath: The resource to be fetched using the FTP server
 #	cachingDir: The directory where the resource is going to be
 #		downloaded, preserving the paths
-sub _cachedGet($$$) {
-	my($ftpServer,$remotePath,$cachingDir)=@_;
+#	LOG: a Log::Log4perl instance
+sub _cachedGet($$$$) {
+	my($ftpServer,$remotePath,$cachingDir,$LOG)=@_;
 	
 	my $filedate = $ftpServer->mdtm($remotePath);
 	my $filesize = $ftpServer->size($remotePath);
@@ -47,7 +50,7 @@ sub _cachedGet($$$) {
 		#print STDERR join(" -=- ",$remotePath,$cachingDir,$localPath,$localBasePath,$localRelDir,$localDir),"\n";
 		my $targetLocalPath = $localPath;
 		$localPath = $ftpServer->get($remotePath,$localPath);
-		print STDERR "DEBUGFTP: ($remotePath -> $targetLocalPath) ".$ftpServer->message."\n"  unless(defined($localPath));
+		$LOG->debug("($remotePath -> $targetLocalPath) ".$ftpServer->message)  unless(defined($localPath));
 		utime($filedate,$filedate,$localPath)  if(defined($localPath));
 	}
 	
@@ -71,7 +74,7 @@ sub new(;$) {
 		$self->{_tempdir} = $tempDir;
 		$workingDir = $tempDir->dirname;
 	}
-	
+	$self->{LOG} = Log::Log4perl->get_logger(__PACKAGE__);
 	$self->{workingDir} = $workingDir;
 	
 	return $self;
@@ -84,9 +87,9 @@ sub new(;$) {
 sub cachedGet($$) {
 	my $self = shift;
 	
-	Carp::croak((caller(0))[3].' is an instance method!')  unless(ref($self));
+	$self->{LOG}->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
 	
-	return _cachedGet($_[0],$_[1],$self->{workingDir});
+	return _cachedGet($_[0],$_[1],$self->{workingDir},$self->{LOG});
 }
 
 # mirror parameters:
@@ -97,7 +100,7 @@ sub cachedGet($$) {
 sub mirror($;$$) {
 	my $self = shift;
 	
-	Carp::croak((caller(0))[3].' is an instance method!')  unless(ref($self));
+	$self->{LOG}->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
 	
 	my $resourceURI = shift;
 	my $localPath = shift;
@@ -119,7 +122,7 @@ sub mirror($;$$) {
 	
 	my $res = $ua->mirror($resourceURI->as_string,$workpathLocal);
 	
-	Carp::croak("FATAL ERROR: Unable to fetch ".$resourceURI->as_string.". Reason: ".$res->status_line)  unless($res->is_success || $res->is_redirect);
+	$self->{LOG}->logdie("FATAL ERROR: Unable to fetch ".$resourceURI->as_string.". Reason: ".$res->status_line)  unless($res->is_success || $res->is_redirect);
 	
 	return $workpathLocal;
 }
