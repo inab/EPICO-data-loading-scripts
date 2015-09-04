@@ -634,8 +634,8 @@ while($doCheck) {
 	}
 }
 
-$LOG->info("* [TESTMODE] Enabled skip mode, level $skipmode ($skipmodeText)")  if($testmode);
-$LOG->info("* [SKIPMODE] Enabled test mode, level $testmode ($testmodeText)")  if($skipmode);
+$LOG->info("* [SKIPMODE] Enabled skip mode, level $skipmode ($skipmodeText)")  if($skipmode);
+$LOG->info("* [TESTMODE] Enabled test mode, level $testmode ($testmodeText)")  if($testmode);
 
 
 if(scalar(@ARGV)>=2) {
