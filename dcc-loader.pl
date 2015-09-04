@@ -602,11 +602,13 @@ sub parseIHECexperiment($$$$) {
 
 my $testmode = undef;
 my $skipmode = undef;
+my $skipmodeText;
+my $testmodeText;
+
 my $doCheck = 1;
 while($doCheck) {
 	if(scalar(@ARGV)>0) {
 		if(index($ARGV[0],'-s')==0) {
-			my $skipmodeText;
 			if(index($ARGV[0],'-ss')==0) {
 				$skipmode = 2;
 				$skipmodeText = 'analysis metadata and primary data';
@@ -614,10 +616,8 @@ while($doCheck) {
 				$skipmode = 1;
 				$skipmodeText = 'only primary data';
 			}
-			$LOG->info("* [TESTMODE] Enabled skip mode, level $skipmode ($skipmodeText)");
 			shift(@ARGV);
 		} elsif(index($ARGV[0],'-t')==0) {
-			my $testmodeText;
 			if(index($ARGV[0],'-tt')==0) {
 				$testmode = 2;
 				$testmodeText = 'only validating, both data and metadata';
@@ -625,7 +625,6 @@ while($doCheck) {
 				$testmode = 1;
 				$testmodeText = 'only validating metadata, and skipping parsing big data';
 			}
-			$LOG->info("* [TESTMODE] Enabled test mode, level $testmode ($testmodeText)");
 			shift(@ARGV);
 		} else {
 			$doCheck = undef;
@@ -634,6 +633,10 @@ while($doCheck) {
 		$doCheck = undef;
 	}
 }
+
+$LOG->info("* [TESTMODE] Enabled skip mode, level $skipmode ($skipmodeText)")  if($testmode);
+$LOG->info("* [SKIPMODE] Enabled test mode, level $testmode ($testmodeText)")  if($skipmode);
+
 
 if(scalar(@ARGV)>=2) {
 	STDOUT->autoflush(1);
