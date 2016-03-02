@@ -5,4 +5,5 @@ In order to use BLUEPRINT DCC database loading scripts you need to install the m
 
 * Config::IniFiles
 * Net::FTP::AutoReconnect
+* Set::Scalar
 * SQL::Statement

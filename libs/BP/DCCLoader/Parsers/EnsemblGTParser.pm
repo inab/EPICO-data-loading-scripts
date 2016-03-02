@@ -12,6 +12,8 @@ use Carp;
 
 use Net::FTP::AutoReconnect;
 
+use Set::Scalar;
+
 use TabParser;
 
 use URI;
@@ -32,7 +34,10 @@ use constant {
 	ENSEMBL_SEQ_REGION_FILE	=> 'seq_region.txt.gz',
 	ENSEMBL_GENE_FILE	=> 'gene.txt.gz',
 	ENSEMBL_TRANSCRIPT_FILE	=> 'transcript.txt.gz',
+	ENSEMBL_EXON_TRANSCRIPT_FILE	=> 'exon_transcript.txt.gz',
+	ENSEMBL_EXON_FILE	=> 'exon.txt.gz',
 	ENSEMBL_XREF_FILE	=> 'xref.txt.gz',
+	ENSEMBL_EXTERNAL_DB_FILE	=> 'external_db.txt.gz',
 };
 
 #####
@@ -49,56 +54,120 @@ sub parseSeqRegions($$$) {
 	1;
 }
 
+use constant ENSEMBL_NS => 'Ensembl';
+use constant DESCRIPTION_NS => 'description';
+
 sub parseENS($$$$$$$$) {
-	my($payload,$seq_region_id,$chromosome_start,$chromosome_end,$display_xref_id,$stable_id,$version,$description,$internal_id,$internal_gene_id)=@_;
+	my($payload,$seq_region_id,$chromosome_start,$chromosome_end,$chromosome_strand,$stable_id,$version,$internal_id,$display_xref_id,$description,$internal_gene_id)=@_;
 	
-	my($p_regionId,$p_ENShash,$p_ENSintHash,$p_geneMap,$chroCV) = @{$payload};
+	my($p_regionId,$p_ENShash,$p_ENSintHash,$p_geneMap,$chroCV,$p_exonsMap) = @{$payload};
 	
 	if(exists($p_regionId->{$seq_region_id})) {
 		my $fullStableId = $stable_id.'.'.$version;
-		my @symbols = ($stable_id,$fullStableId);
-		$description = undef  if($description eq "\\N");
+		my @symbols = (
+			{
+				'ns'	=>	ENSEMBL_NS,
+				'name'	=>	[$fullStableId,$stable_id],
+			}
+		);
+		$description = undef  if(defined($description) && $description eq "\\N");
 		
 		my $parsedData = undef;
 		if(exists($p_ENShash->{$stable_id})) {
 			$parsedData = $p_ENShash->{$stable_id};
 			push(@{$parsedData->{'symbol'}},@symbols);
 		} else {
-			my $feature_cluster_id = defined($internal_gene_id)?$p_geneMap->{$internal_gene_id}->{'feature_cluster_id'}:$fullStableId;
+			my $p_feature_cluster_ids;
+			if(defined($internal_gene_id)) {
+				$p_feature_cluster_ids = [ @{$p_geneMap->{$internal_gene_id}->{'feature_cluster_id'}}, $fullStableId ];
+			} elsif(defined($display_xref_id)) {
+				$p_feature_cluster_ids = [ $fullStableId ];
+			} else {
+				if(exists($p_exonsMap->{$internal_id})) {
+					$p_feature_cluster_ids = $p_exonsMap->{$internal_id};
+					push(@{$p_feature_cluster_ids},$fullStableId);
+				} else {
+					# This case should not happen
+					$p_feature_cluster_ids = [ $fullStableId ];
+				}
+			}
+			
 			$parsedData = {
 				#$fullStableId,
-				'feature_cluster_id'	=> $feature_cluster_id,
-				'feature'	=> (defined($internal_gene_id)?'transcript':'gene'),
+				'feature_cluster_id'	=> $p_feature_cluster_ids,
+				'feature_ns'	=> ENSEMBL_NS,
+				'feature_id'	=> $fullStableId,
+				'feature'	=> (defined($internal_gene_id)?'transcript':(defined($display_xref_id) ? 'gene' : 'exon')),
 				'coordinates'	=> [
 					{
+						'feature_ns'	=> ENSEMBL_NS,
 						'feature_id'	=> $fullStableId,
 						'chromosome'	=> $p_regionId->{$seq_region_id},
 						'chromosome_start'	=> ($chromosome_start+0),
 						'chromosome_end'	=> ($chromosome_end+0),
+						'chromosome_strand'	=> $chromosome_strand,
 					}
 				],
 				'symbol'	=> \@symbols,
 			};
 			$p_ENShash->{$stable_id} = $parsedData;
-			$p_geneMap->{$internal_id} = $parsedData  unless(defined($internal_gene_id));
+			$p_geneMap->{$internal_id} = $parsedData  unless(defined($internal_gene_id) || !defined($display_xref_id));
+			$p_exonsMap->{$internal_id} = $parsedData  if(defined($internal_gene_id));
 		}
-		$parsedData->{'description'} = $description  if(defined($description));
-		
-		$p_ENSintHash->{$display_xref_id} = $parsedData;
+		if(defined($display_xref_id)) {
+			push(@{$parsedData->{'symbol'}},{'ns' => DESCRIPTION_NS,'name' => [$description]})  if(defined($description));
+			
+			$p_ENSintHash->{$display_xref_id} = $parsedData;
+		}
 	}
 	
 	1;
 }
 
-sub parseXREF($$$$$) {
-	my($p_ENSintHash,$display_xref_id,$dbprimary_acc,$display_label,$description)=@_;
+sub parseET($$$) {
+	my($payload,$internal_exon_id,$internal_transcript_id)=@_;
+	
+	my($p_transcriptsMap,$p_exonsMap) = @{$payload};
+	
+	if(exists($p_transcriptsMap->{$internal_transcript_id})) {
+		if(exists($p_exonsMap->{$internal_exon_id})) {
+			$p_exonsMap->{$internal_exon_id}->insert(@{$p_transcriptsMap->{$internal_transcript_id}{'feature_cluster_id'}});
+		} else {
+			$p_exonsMap->{$internal_exon_id} = Set::Scalar->new(@{$p_transcriptsMap->{$internal_transcript_id}{'feature_cluster_id'}});
+		}
+	#} else {
+	#	# This case happens with exons from LRG, so skip them
+	#	print $internal_exon_id, ' JARL ', $internal_transcript_id,"\n";
+	}
+	
+	1;
+}
+
+sub parseExternalDB($$$) {
+	my($p_externalDB,$external_db_id,$db_name)=@_;
+	
+	$p_externalDB->{$external_db_id} = $db_name;
+	
+	1;
+}
+
+sub parseXREF($$$$$$) {
+	my($payload,$display_xref_id,$external_db_id,$dbprimary_acc,$display_label,$description)=@_;
+	
+	my($p_ENSintHash,$p_externalDB) = @{$payload};
 	
 	if(exists($p_ENSintHash->{$display_xref_id})) {
-		my $p_desc = $p_ENSintHash->{$display_xref_id}->{'symbol'};
-		push(@{$p_desc},$dbprimary_acc);
+		my $ns = exists($p_externalDB->{$external_db_id}) ? $p_externalDB->{$external_db_id} : $external_db_id;
 		
-		push(@{$p_desc},$display_label)  if($dbprimary_acc ne $display_label);
-		push(@{$p_desc},$description)  unless($description eq "\\N");
+		my $p_desc = $p_ENSintHash->{$display_xref_id}->{'symbol'};
+		
+		my @names = ($dbprimary_acc);
+		push(@names,$display_label)  if($dbprimary_acc ne $display_label);
+		push(@names,$description)  unless($description eq "\\N");
+		push(@{$p_desc},{
+			'ns' => $ns,
+			'name' => \@names,
+		});
 	}
 	
 	1;
@@ -106,12 +175,15 @@ sub parseXREF($$$$$) {
 
 # parseEnsemblGenesAndTranscripts parameters:
 #	chroCV: A BP::Model::CV instance. These are the known chromosomes
+#	testmode:
 #	localSQLFile: path to the fetched Ensembl MySQL schema
 #	localSeqRegion: path to the Ensembl MySQL dump of the region types
 #	localGenes: path to the Ensembl MySQL dump of the known genes
 #	localTranscripts: path to the Ensembl MySQL dump of the known transcripts
+#	localExonTranscripts: path to the Ensembl MySQL dump of the correspondence between transcripts and exons
+#	localExons: path to the Ensembl MySQL dump of the known exons
 #	localXref: path to the Ensembl MySQL dump of the known cross-references
-#	testmode:
+#	localExternalDB: path to the Ensembl MySQL dump of the external databases used for cross-references
 # The returned hash reference holds the data to be dumped later
 # The values will be array instances with the structure of
 #	ensembl id (with version number)
@@ -120,8 +192,8 @@ sub parseXREF($$$$$) {
 #	chromosome_end (1-based)
 #	symbols (an array)
 #	feature
-sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
-	my($chroCV,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localXref,$testmode) = @_;
+sub parseEnsemblGenesAndTranscripts($$$$$$$$$$) {
+	my($chroCV,$testmode,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localExonTranscripts,$localExons,$localXref,$localExternalDB) = @_;
 	
 	# These are the Ensembl columns for its tables
 	my $p_ensTables = BP::DCCLoader::Parsers::MySQLSchemaParser->new($localSQLFile);
@@ -172,6 +244,7 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 			#	seq_region_id
 			#	chromosome_start
 			#	chromosome_end
+			#	chromosome_strand
 			#	display_xref_id
 			#	ensembl gene id
 			#	ensembl gene id version
@@ -181,11 +254,12 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 				'seq_region_id',
 				'seq_region_start',
 				'seq_region_end',
-				'display_xref_id',
+				'seq_region_strand',
 				'stable_id',
 				'version',
+				'gene_id',
+				'display_xref_id',
 				'description',
-				'gene_id'
 			), # [3,4,5,7,14,15,10,0],
 #			TabParser::TAG_NEG_FILTER => [[1 => 'LRG_gene']],
 		);
@@ -198,14 +272,16 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 	}
 	
 	$LOG->info("Parsing ".$localTranscripts);
+	my %transcriptsMap;
 	if(open(my $ENST,'-|',BP::Loader::Tools::GUNZIP,'-c',$localTranscripts)) {
 		my %config = (
-			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV],
+			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV,\%transcriptsMap],
 			TabParser::TAG_CALLBACK => \&parseENS,
 			# The columns are 
 			#	seq_region_id
 			#	chromosome_start
 			#	chromosome_end
+			#	chromosome_strand
 			#	display_xref_id
 			#	ensembl transcript id
 			#	ensembl transcript id version
@@ -216,11 +292,12 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 				'seq_region_id',
 				'seq_region_start',
 				'seq_region_end',
-				'display_xref_id',
+				'seq_region_strand',
 				'stable_id',
 				'version',
-				'description',
 				'transcript_id',
+				'display_xref_id',
+				'description',
 				'gene_id'
 			), # [3,4,5,7,13,14,10,0,1],
 #			TabParser::TAG_NEG_FILTER => [[8 => 'LRG_gene']],
@@ -233,14 +310,104 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 		Carp::croak("ERROR: Unable to open EnsEMBL Transcripts file ".$localTranscripts);
 	}
 	
+
+	# Mapping from exons to transcripts
+	my %exonsMap;
+	
+	$LOG->info("Parsing ".$localExonTranscripts);
+	if(open(my $ET,'-|',BP::Loader::Tools::GUNZIP,'-c',$localExonTranscripts)) {
+		my %config = (
+			TabParser::TAG_CONTEXT	=> [\%transcriptsMap,\%exonsMap],
+			TabParser::TAG_CALLBACK => \&parseET,
+			TabParser::TAG_FETCH_COLS => $p_ensTables->mapTableColumns('exon_transcript',
+				'exon_id',
+				'transcript_id',
+			),
+		);
+		$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
+		TabParser::parseTab($ET,%config);
+		
+		close($ET);
+		
+		# Post-processing
+		foreach my $set (values(%exonsMap)) {
+			$set = [ $set->members() ];
+		}
+	} else {
+		Carp::croak("ERROR: Unable to open EnsEMBL Exons file ".$localExonTranscripts);
+	}
+	
+	%transcriptsMap = ();
+	
+	$LOG->info("Parsing ".$localExons);
+	if(open(my $ENSE,'-|',BP::Loader::Tools::GUNZIP,'-c',$localExons)) {
+		my %config = (
+			TabParser::TAG_CONTEXT	=> [\%regionId,\%ENShash,\%ENSintHash,\%geneMap,$chroCV,\%exonsMap],
+			TabParser::TAG_CALLBACK => \&parseENS,
+			# The columns are 
+			#	seq_region_id
+			#	chromosome_start
+			#	chromosome_end
+			#	chromosome_strand
+			#	display_xref_id
+			#	ensembl transcript id
+			#	ensembl transcript id version
+			#	description
+			#	internal transcript id
+			#	internal gene id
+			TabParser::TAG_FETCH_COLS => $p_ensTables->mapTableColumns('exon',
+				'seq_region_id',
+				'seq_region_start',
+				'seq_region_end',
+				'seq_region_strand',
+				'stable_id',
+				'version',
+				'exon_id',
+			), # [3,4,5,7,13,14,10,0,1],
+#			TabParser::TAG_NEG_FILTER => [[8 => 'LRG_gene']],
+		);
+		$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
+		TabParser::parseTab($ENSE,%config);
+		
+		close($ENSE);
+	} else {
+		Carp::croak("ERROR: Unable to open EnsEMBL Exons file ".$localExons);
+	}
+	
 	# Freeing unused memory
 	%regionId = ();
 	%geneMap = ();
+	%exonsMap = ();
+	
+	$LOG->info("Parsing ".$localExternalDB);
+	my %externalDB = ();
+	if(open(my $ExtDB,'-|',BP::Loader::Tools::GUNZIP,'-c',$localExternalDB)) {
+		my %config = (
+			TabParser::TAG_CONTEXT	=> \%externalDB,
+			TabParser::TAG_CALLBACK => \&parseExternalDB,
+			TabParser::TAG_MULTILINE_SEP => "\\",
+			# The columns are 
+			#	display_xref_id
+			#	dbprimary_acc
+			#	display_label
+			#	description
+			TabParser::TAG_FETCH_COLS => $p_ensTables->mapTableColumns('external_db',
+				'external_db_id',
+				'db_name',
+			), # [0,2,3,5],
+		);
+		$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
+		TabParser::parseTab($ExtDB,%config);
+		
+		close($ExtDB);
+	} else {
+		Carp::croak("ERROR: Unable to open EnsEMBL external DB file ".$localExternalDB);
+	}
 	
 	$LOG->info("Parsing ".$localXref);
 	if(open(my $XREF,'-|',BP::Loader::Tools::GUNZIP,'-c',$localXref)) {
 		my %config = (
-			TabParser::TAG_CONTEXT	=> \%ENSintHash,
+			TabParser::TAG_CONTEXT	=> [\%ENSintHash,\%externalDB],
 			TabParser::TAG_CALLBACK => \&parseXREF,
 			TabParser::TAG_MULTILINE_SEP => "\\",
 			# The columns are 
@@ -250,6 +417,7 @@ sub parseEnsemblGenesAndTranscripts($$$$$$;$) {
 			#	description
 			TabParser::TAG_FETCH_COLS => $p_ensTables->mapTableColumns('xref',
 				'xref_id',
+				'external_db_id',
 				'dbprimary_acc',
 				'display_label',
 				'description'
@@ -308,7 +476,10 @@ sub getEnsemblCoordinates($$$;$) {
 	my $localSeqRegion = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_SEQ_REGION_FILE);
 	my $localGenes = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_GENE_FILE);
 	my $localTranscripts = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_TRANSCRIPT_FILE);
+	my $localExonTranscripts = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXON_TRANSCRIPT_FILE);
+	my $localExons = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXON_FILE);
 	my $localXref = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_XREF_FILE);
+	my $localExternalDB = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXTERNAL_DB_FILE);
 	
 	Carp::croak("FATAL ERROR: Unable to fetch files from $ensemblPath (host $ensemblHost)")  unless(defined($localSQLFile) && defined($localSeqRegion) && defined($localGenes) && defined($localTranscripts) && defined($localXref));
 	
@@ -318,7 +489,7 @@ sub getEnsemblCoordinates($$$;$) {
 	
 	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
 		
-	return parseEnsemblGenesAndTranscripts($chroCV,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localXref,$testmode);
+	return parseEnsemblGenesAndTranscripts($chroCV,$testmode,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localExonTranscripts,$localExons,$localXref,$localExternalDB);
 }
 
 1;

@@ -44,6 +44,7 @@ use constant {
 	REACTOME_BUNDLE_TAG	=> 'reactome-bundle',
 	REACTOME_INTERACTIONS_FILE	=> 'homo_sapiens.interactions.txt.gz',
 	REACTOME_PATHWAYS_FILE	=> 'Ensembl2Reactome_All_Levels.txt',
+	REACTOME_COMPLEXES_FILE	=> 'curated_complexes.stid.txt',
 };
 
 sub parseReactomeInteractions($$$$$);
@@ -54,6 +55,7 @@ sub parseReactomePathways($$$$);
 #####
 my @TRANSKEYS = ('chromosome','chromosome_start','chromosome_end');
 
+use constant REACTOME_NS => 'Reactome';
 
 sub parseReactomePathways($$$$) {
 	my($payload,$participantId,$stablePathwayId,$pathwayName)=@_;
@@ -62,15 +64,26 @@ sub parseReactomePathways($$$$) {
 	
 	if(exists($p_ENShash->{$participantId})) {
 		$p_pathways->{$stablePathwayId} = {
-			'feature_cluster_id'	=> $stablePathwayId,
+			'feature_cluster_id'	=> [$stablePathwayId],
+			'feature_ns'	=> REACTOME_NS,
+			'feature_id'	=> $stablePathwayId,
 			'feature'	=> 'pathway',
 			'coordinates'	=> [],
-			'symbol'	=> [$stablePathwayId,$pathwayName],
+			'symbol'	=> [
+				{
+					'ns' => REACTOME_NS,
+					'name' => [$stablePathwayId]
+				},
+				{
+					'ns' => 'description',
+					'name' => [ $pathwayName ]
+				}
+			]
 		}  unless(exists($p_pathways->{$stablePathwayId}));
 		
-		my $participant = { 'feature_id' => $participantId };
+		my $participant = { 'feature_id' => exists($p_ENShash->{$participantId}) ? $p_ENShash->{$participantId}{'feature_id'} : $participantId };
 		
-		@{$participant}{@TRANSKEYS} = @{$p_ENShash->{$participantId}{'coordinates'}[0]}{@TRANSKEYS};
+		@{$participant}{@TRANSKEYS} = @{$p_ENShash->{$participantId}{'coordinates'}[0]}{@TRANSKEYS}  if(exists($p_ENShash->{$participantId}));
 		
 		push(@{$p_pathways->{$stablePathwayId}{'coordinates'}},$participant);
 	}
@@ -78,10 +91,18 @@ sub parseReactomePathways($$$$) {
 	1;
 }
 
+sub parseReactomeComplexDesc($$$) {
+	my($p_complexDesc,$pathway_id,$desc)=@_;
+	
+	$p_complexDesc->{$pathway_id} = $desc  if(length($pathway_id) > 0);
+	
+	1;
+}
+
 sub parseReactomeInteractions($$$$$) {
 	my($payload,$left,$right,$pathway_id,$type)=@_;
 	
-	my($p_ENShash,$p_pathways,$p_foundInter)=@{$payload};
+	my($p_ENShash,$p_pathways,$p_foundInter,$p_complexDesc)=@{$payload};
 	
 	$left = ''  unless(defined($left));
 	$right= ''  unless(defined($right));
@@ -92,14 +113,28 @@ sub parseReactomeInteractions($$$$$) {
 			unless(exists($p_foundInter->{$pathway_id}{$ensId})) {
 				$p_foundInter->{$pathway_id}{$ensId} = undef;
 				
-				$p_pathways->{$pathway_id} = {
-					'feature_cluster_id'	=> $pathway_id,
-					'feature'	=> 'reaction',
-					'coordinates'	=> [],
-					'symbol'	=> [$pathway_id],
-				}  unless(exists($p_pathways->{$pathway_id}));
+				unless(exists($p_pathways->{$pathway_id})) {
+					my @symbols = (
+						{
+							'ns' => REACTOME_NS,
+							'name' => [$pathway_id]
+						}
+					);
+					push(@symbols,{
+						'ns' => 'description',
+						'name' => [ $p_complexDesc->{$pathway_id} ]
+					})  if(exists($p_complexDesc->{$pathway_id}));
+					$p_pathways->{$pathway_id} = {
+						'feature_cluster_id'	=> [$pathway_id],
+						'feature_ns'	=> REACTOME_NS,
+						'feature_id'	=> $pathway_id,
+						'feature'	=> $type,
+						'coordinates'	=> [],
+						'symbol'	=> \@symbols,
+					};
+				}
 				
-				my $participant = { 'feature_id' => $ensId };
+				my $participant = { 'feature_id' => exists($p_ENShash->{$ensId}) ? $p_ENShash->{$ensId}{'feature_id'} : $ensId };
 				
 				@{$participant}{@TRANSKEYS} = @{$p_ENShash->{$ensId}{'coordinates'}[0]}{@TRANSKEYS}  if(exists($p_ENShash->{$ensId}));
 				
@@ -223,7 +258,7 @@ if(scalar(@ARGV)>=2) {
 	
 	# Fetching HTTP resources
 	my $reactome_bundle_local = undef;
-	unless(defined($reactome_bundle_file)) {
+	if(defined($reactome_bundle_file)) {
 		$LOG->info("Connecting to $reactome_http_base...");
 		my $reactome_bundle_uri = $reactome_http_base->clone();
 		my @reactSeg = $reactome_http_base->path_segments();
@@ -239,13 +274,18 @@ if(scalar(@ARGV)>=2) {
 	my($p_Gencode,$p_PAR,$p_ENShash) = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($model,$workingDir,$ini,$testmode);
 	
 	# Storing the final genes and transcripts data
+	#use JSON;
+	#my $j = JSON->new->pretty->allow_blessed();
 	foreach my $mapper (@mappers) {
 		unless($testmode) {
-			$mapper->bulkInsert($p_Gencode);
+			#$mapper->bulkInsert($p_Gencode);
 			$mapper->bulkInsert(values(%{$p_ENShash}));
 		} else {
 			$LOG->info("[TESTMODE] Skipping storage of remaining gene and transcript coordinates");
-			$mapper->validateAndEnactEntry($p_Gencode);
+			#$mapper->validateAndEnactEntry($p_Gencode);
+			#foreach my $entry (values(%{$p_ENShash})) {
+			#	print $j->encode($entry),"\n";
+			#}
 			$mapper->validateAndEnactEntry(values(%{$p_ENShash}));
 		}
 		#$mapper->freeDestination();
@@ -255,8 +295,9 @@ if(scalar(@ARGV)>=2) {
 	if(defined($reactome_bundle_local)) {
 		my $localReactomeInteractionsFile = File::Spec->catfile($cachingDir,REACTOME_INTERACTIONS_FILE);
 		my $localReactomePathwaysFile = File::Spec->catfile($cachingDir,REACTOME_PATHWAYS_FILE);
-		$LOG->info("Extracting $localReactomeInteractionsFile and $localReactomePathwaysFile from $reactome_bundle_local");
-		if((-f $localReactomeInteractionsFile && -f $localReactomePathwaysFile) || system('tar','-x','-f',$reactome_bundle_local,'-C',$cachingDir,'--transform=s,^.*/,,','--wildcards','*/'.REACTOME_INTERACTIONS_FILE,'*/'.REACTOME_PATHWAYS_FILE)==0) {
+		my $localReactomeComplexesFile = File::Spec->catfile($cachingDir,REACTOME_COMPLEXES_FILE);
+		$LOG->info("Extracting $localReactomeInteractionsFile , $localReactomePathwaysFile and $localReactomeComplexesFile from $reactome_bundle_local");
+		if((-f $localReactomeInteractionsFile && -f $localReactomePathwaysFile && -f $localReactomeComplexesFile) || system('tar','-x','-f',$reactome_bundle_local,'-C',$cachingDir,'--transform=s,^.*/,,','--wildcards','*/'.REACTOME_INTERACTIONS_FILE,'*/'.REACTOME_PATHWAYS_FILE,'*/'.REACTOME_COMPLEXES_FILE)==0) {
 			$LOG->info("Parsing ".$localReactomePathwaysFile);
 			if(open(my $REACTPATH,'<',$localReactomePathwaysFile)) {
 				my %pathways = ();
@@ -277,11 +318,31 @@ if(scalar(@ARGV)>=2) {
 						$mapper->bulkInsert(values(%pathways));
 					} else {
 						$LOG->info("[TESTMODE] Skipping storage of pathways mappings");
+						#foreach my $entry (values(%pathways)) {
+						#	print $j->encode($entry),"\n";
+						#}
 						my $entorp = $mapper->validateAndEnactEntry(values(%pathways));
 					}
 				}
 			} else {
 				Carp::croak("ERROR: Unable to open Reactome pathways file ".$localReactomePathwaysFile);
+			}
+			
+			$LOG->info("Parsing ".$localReactomeComplexesFile);
+			my %complexDesc;
+			if(open(my $COMPLEX,'<',$localReactomeComplexesFile)) {
+				my %config = (
+					TabParser::TAG_CONTEXT	=> \%complexDesc,
+					TabParser::TAG_CALLBACK => \&parseReactomeComplexDesc,
+					TabParser::TAG_FOLLOW	=> 1,	# We had to add it in order to avoid crap from Reactome generators
+					TabParser::TAG_FETCH_COLS => [0,2],
+				);
+				$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
+				TabParser::parseTab($COMPLEX,%config);
+				
+				close($COMPLEX);
+			} else {
+				Carp::croak("ERROR: Unable to open Reactome complexes file ".$localReactomeComplexesFile);
 			}
 			
 			$LOG->info("Parsing ".$localReactomeInteractionsFile);
@@ -299,13 +360,13 @@ if(scalar(@ARGV)>=2) {
 				
 				my %config = (
 					TabParser::TAG_COMMENT	=>	'#',
-					TabParser::TAG_CONTEXT	=> [$p_ENShash,\%reactions,\%foundInter],
+					TabParser::TAG_CONTEXT	=> [$p_ENShash,\%reactions,\%foundInter,\%complexDesc],
 					TabParser::TAG_CALLBACK => \&parseReactomeInteractions,
 					#TabParser::TAG_ERR_CALLBACK => \&parseReactomeInteractions,
 					TabParser::TAG_NUM_COLS	=> 9,	# We had to add it in order to avoid crap from Reactome generators
 					TabParser::TAG_FOLLOW	=> 1,	# We had to add it in order to avoid crap from Reactome generators
 					TabParser::TAG_FETCH_COLS => [1,4,7,6],
-					TabParser::TAG_POS_FILTER => [[6 => 'reaction']],
+					#TabParser::TAG_POS_FILTER => [[6 => 'reaction']],
 				);
 				$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
 				TabParser::parseTab($REACT,%config);
@@ -319,6 +380,9 @@ if(scalar(@ARGV)>=2) {
 						$mapper->bulkInsert(values(%reactions));
 					} else {
 						$LOG->info("[TESTMODE] Skipping storage of reactions mappings");
+						#foreach my $entry (values(%reactions)) {
+						#	print $j->encode($entry),"\n";
+						#}
 						my $entorp = $mapper->validateAndEnactEntry(values(%reactions));
 					}
 					$mapper->freeDestination();

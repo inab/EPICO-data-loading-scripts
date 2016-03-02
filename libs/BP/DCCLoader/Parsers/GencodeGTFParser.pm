@@ -32,6 +32,47 @@ use constant {
 	GENCODE_GTF_FILE_TAG	=> 'gencode-gtf',
 };
 
+use constant HAVANA_NS	=> 'HAVANA';
+my %FeaturesNSMap = (
+	'gene_id'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+	'gene_name'	=> 'HGNC',
+	'havana_gene'	=> HAVANA_NS,
+	'transcript_id'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+	'transcript_name'	=> BP::DCCLoader::Parsers::EnsemblGTParser::DESCRIPTION_NS,
+	'havana_transcript'	=> HAVANA_NS,
+	'exon_id'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+	'protein_id'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+	'ccdsid'	=>	'CCDS',
+);
+
+my %MainFeatures = (
+	'gene' => undef,
+	'transcript' => undef,
+	'exon' => undef
+);
+
+my %FeaturesKeys = (
+	'gene' => 'gene_id',
+	'transcript' => 'transcript_id',
+	'Selenocysteine' => 'transcript_id',
+	'UTR' => 'transcript_id',
+	'exon' => 'exon_id',
+	'CDS' => 'exon_id',
+	'start_codon' => 'exon_id',
+	'stop_codon' => 'exon_id',
+);
+
+my %FeaturesClusterKeys = (
+	'gene' => ['gene_id'],
+	'transcript' => ['gene_id','transcript_id'],
+	'Selenocysteine' => ['gene_id','transcript_id'],
+	'UTR' => ['gene_id','transcript_id'],
+	'exon' => ['gene_id','transcript_id','exon_id'],
+	'CDS' => ['gene_id','transcript_id','exon_id'],
+	'start_codon' => ['gene_id','transcript_id','exon_id'],
+	'stop_codon' => ['gene_id','transcript_id','exon_id'],
+);
+
 sub parseGTF(@) {
 	my(
 		$payload,
@@ -42,7 +83,7 @@ sub parseGTF(@) {
 		$chromosome_end,
 		undef,
 		$chromosome_strand,
-		undef, # frame
+		$frame, # frame
 		$attributes_str, # attributes following .ace format
 	) = @_;
 	
@@ -66,68 +107,94 @@ sub parseGTF(@) {
 	
 	my $ensIdKey = undef;
 	my $p_ensFeatures = undef;
-	if($feature eq 'gene') {
-		$ensIdKey = 'gene_id';
-		$p_ensFeatures = ['gene_id','gene_name','havana_gene'];
+	if(exists($FeaturesKeys{$feature})) {
+		$ensIdKey = $FeaturesKeys{$feature};
 	} else {
-		$ensIdKey = ($feature eq 'transcript' || !exists($attributes{'exon_id'}))? 'transcript_id' : 'exon_id';
-		$p_ensFeatures = ['transcript_id','transcript_name','havana_transcript','exon_id','ccdsid','protein_id'];
+		$ensIdKey = 'transcript_id';
 	}
 	
 	my $fullEnsemblId = $attributes{$ensIdKey};
-	my $ensemblId = substr($fullEnsemblId,0,index($fullEnsemblId,'.'));
-	
-	if($feature eq 'gene' || $feature eq 'transcript') {
-		if(exists($p_ENShash->{$ensemblId})) {
-			$p_regionData = $p_ENShash->{$ensemblId};
-			$local = undef;
-		}
+	my @ensemblIds = ($fullEnsemblId);
+	my $ensemblId = undef;
+	if(exists($MainFeatures{$feature})) {
+		$ensemblId = substr($fullEnsemblId,0,index($fullEnsemblId,'.'));
+		push(@ensemblIds,$ensemblId);
+	} else {
+		$fullEnsemblId .= '.'.$feature;
+		$ensemblId = $fullEnsemblId;
 	}
-	
-	if($local) {
+	if(exists($p_ENShash->{$ensemblId})) {
+		$p_regionData = $p_ENShash->{$ensemblId};
+		$local = undef;
+	} else {
 		my $term = $chroCV->getTerm($chro);
 		if($term) {
+			#print "DEBUG: $chro $feature\n"  unless(exists($FeaturesClusterKeys{$feature}));
+			my @feature_cluster_ids = exists($FeaturesClusterKeys{$feature}) ? @attributes{@{$FeaturesClusterKeys{$feature}}} : ( $ensIdKey );
 			$p_regionData = {
 				#$fullEnsemblId,
-				'feature_cluster_id'	=> $attributes{'gene_id'},
+				'feature_cluster_id'	=> \@feature_cluster_ids,
+				'feature_ns'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+				'feature_id'	=> $fullEnsemblId,
 				'feature'	=> $feature,
 				'coordinates'	=> [
 					{
+						'feature_ns'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
 						'feature_id'	=> $fullEnsemblId,
 						'chromosome'	=> $term->key(),
 						'chromosome_start'	=> ($chromosome_start+0),
 						'chromosome_end'	=> ($chromosome_end+0),
+						'chromsome_strand'	=> (($chromosome_strand eq '-') ? -1 : 1),
 					}
 				],
-				'symbol'	=> [$ensemblId],
+				'symbol'	=> [{
+					'ns'	=>	BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+					'name'	=>	\@ensemblIds,
+				}],
 			};
+			
+			$p_regionData->{'coordinates'}[0]{'frame'} = $frame  unless($frame eq '.');
 		#} else {
 		#	print STDERR "DEBUG CHRO: $chro\n";
 		}
 	}
 	
 	if($p_regionData) {
-		foreach my $ensFeature (@{$p_ensFeatures}) {
-			if(exists($attributes{$ensFeature})) {
-				my $val = $attributes{$ensFeature};
-				unless($local) {
-					# Inefficient, but effective
-					foreach my $sym (@{$p_regionData->{symbol}}) {
-						if($sym eq $val) {
-							$val = undef;
-							
-							last;
-						}
-					}
+		FEATURES:
+		foreach my $feature (keys(%attributes)) {
+			my $ns = exists($FeaturesNSMap{$feature}) ? $FeaturesNSMap{$feature} : $feature;
+			my $val = $attributes{$feature};
+			# Inefficient, but effective
+			my $p_name = undef;
+			foreach my $p_sym (@{$p_regionData->{'symbol'}}) {
+				if($p_sym->{'ns'} eq $ns) {
+					$p_name = $p_sym->{'name'};
+					
+					last;
 				}
-				push(@{$p_regionData->{symbol}},$attributes{$ensFeature})  if(defined($val));
 			}
+			
+			unless(defined($p_name)) {
+				$p_name = [];
+				push(@{$p_regionData->{'symbol'}},{'ns' => $ns, 'name' => $p_name});
+			}
+			
+			# Inefficient, but effective
+			foreach my $sym (@{$p_name}) {
+				if($sym eq $val) {
+					#$val = undef;
+					
+					next FEATURES;
+				}
+			}
+			push(@{$p_name},$val);
 		}
 		
 		# Last, save it!!!
 		if($local) {
 			push(@{$p_Gencode},$p_regionData);
-			$p_PAR->{$ensemblId} = $p_regionData  if($feature eq 'gene' || $feature eq 'transcript');
+			$p_ENShash->{$ensemblId} = $p_regionData;
+			$p_PAR->{$ensemblId} = $p_regionData  if(exists($MainFeatures{$feature}));
 		}
 	}
 	
