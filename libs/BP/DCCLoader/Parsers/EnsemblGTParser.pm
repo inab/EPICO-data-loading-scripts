@@ -12,8 +12,6 @@ use Carp;
 
 use Net::FTP::AutoReconnect;
 
-use Set::Scalar;
-
 use TabParser;
 
 use URI;
@@ -66,8 +64,8 @@ sub parseENS($$$$$$$$) {
 		my $fullStableId = $stable_id.'.'.$version;
 		my @symbols = (
 			{
-				'ns'	=>	ENSEMBL_NS,
-				'name'	=>	[$fullStableId,$stable_id],
+				'domain'	=>	ENSEMBL_NS,
+				'value'	=>	[$fullStableId,$stable_id],
 			}
 		);
 		$description = undef  if(defined($description) && $description eq "\\N");
@@ -105,7 +103,7 @@ sub parseENS($$$$$$$$) {
 						'chromosome'	=> $p_regionId->{$seq_region_id},
 						'chromosome_start'	=> ($chromosome_start+0),
 						'chromosome_end'	=> ($chromosome_end+0),
-						'chromosome_strand'	=> $chromosome_strand,
+						'chromosome_strand'	=> ($chromosome_strand+0),
 					}
 				],
 				'symbol'	=> \@symbols,
@@ -115,7 +113,7 @@ sub parseENS($$$$$$$$) {
 			$p_exonsMap->{$internal_id} = $parsedData  if(defined($internal_gene_id));
 		}
 		if(defined($display_xref_id)) {
-			push(@{$parsedData->{'symbol'}},{'ns' => DESCRIPTION_NS,'name' => [$description]})  if(defined($description));
+			push(@{$parsedData->{'symbol'}},{'domain' => DESCRIPTION_NS,'value' => [$description]})  if(defined($description));
 			
 			$p_ENSintHash->{$display_xref_id} = $parsedData;
 		}
@@ -131,9 +129,12 @@ sub parseET($$$) {
 	
 	if(exists($p_transcriptsMap->{$internal_transcript_id})) {
 		if(exists($p_exonsMap->{$internal_exon_id})) {
-			$p_exonsMap->{$internal_exon_id}->insert(@{$p_transcriptsMap->{$internal_transcript_id}{'feature_cluster_id'}});
+			foreach my $elem (@{$p_transcriptsMap->{$internal_transcript_id}{'feature_cluster_id'}}) {
+				$p_exonsMap->{$internal_exon_id}{$elem} = undef;
+			}
 		} else {
-			$p_exonsMap->{$internal_exon_id} = Set::Scalar->new(@{$p_transcriptsMap->{$internal_transcript_id}{'feature_cluster_id'}});
+			my %set = map { $_ => undef } @{$p_transcriptsMap->{$internal_transcript_id}{'feature_cluster_id'}};
+			$p_exonsMap->{$internal_exon_id} = \%set;
 		}
 	#} else {
 	#	# This case happens with exons from LRG, so skip them
@@ -159,14 +160,20 @@ sub parseXREF($$$$$$) {
 	if(exists($p_ENSintHash->{$display_xref_id})) {
 		my $ns = exists($p_externalDB->{$external_db_id}) ? $p_externalDB->{$external_db_id} : $external_db_id;
 		
-		my $p_desc = $p_ENSintHash->{$display_xref_id}->{'symbol'};
+		my $p_desc;
+		if(exists($p_ENSintHash->{$display_xref_id}->{'attribute'})) {
+			$p_desc = $p_ENSintHash->{$display_xref_id}->{'attribute'};
+		} else {
+			$p_desc = [];
+			$p_ENSintHash->{$display_xref_id}->{'attribute'} = $p_desc;
+		}
 		
-		my @names = ($dbprimary_acc);
-		push(@names,$display_label)  if($dbprimary_acc ne $display_label);
-		push(@names,$description)  unless($description eq "\\N");
+		my @values = ($dbprimary_acc);
+		push(@values,$display_label)  if($dbprimary_acc ne $display_label);
+		push(@values,$description)  unless($description eq "\\N");
 		push(@{$p_desc},{
-			'ns' => $ns,
-			'name' => \@names,
+			'domain' => $ns,
+			'value' => \@values,
 		});
 	}
 	
@@ -331,7 +338,7 @@ sub parseEnsemblGenesAndTranscripts($$$$$$$$$$) {
 		
 		# Post-processing
 		foreach my $set (values(%exonsMap)) {
-			$set = [ $set->members() ];
+			$set = [ keys(%{$set}) ];
 		}
 	} else {
 		Carp::croak("ERROR: Unable to open EnsEMBL Exons file ".$localExonTranscripts);
@@ -375,9 +382,9 @@ sub parseEnsemblGenesAndTranscripts($$$$$$$$$$) {
 	}
 	
 	# Freeing unused memory
-	%regionId = ();
-	%geneMap = ();
-	%exonsMap = ();
+	undef %regionId;
+	undef %geneMap;
+	undef %exonsMap;
 	
 	$LOG->info("Parsing ".$localExternalDB);
 	my %externalDB = ();
@@ -431,7 +438,7 @@ sub parseEnsemblGenesAndTranscripts($$$$$$$$$$) {
 		Carp::croak("ERROR: Unable to open EnsEMBL XREF file ".$localXref);
 	}
 	# Freeing unused memory
-	%ENSintHash = ();
+	undef %ENSintHash;
 	
 	return \%ENShash;
 }

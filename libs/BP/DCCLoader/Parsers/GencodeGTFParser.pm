@@ -2,6 +2,7 @@
 
 use warnings;
 use strict;
+use experimental 'smartmatch';
 
 use BP::DCCLoader::Parsers::EnsemblGTParser;
 use BP::DCCLoader::WorkingDir;
@@ -33,7 +34,7 @@ use constant {
 };
 
 use constant HAVANA_NS	=> 'HAVANA';
-my %FeaturesNSMap = (
+my %AttributesNSMap = (
 	'gene_id'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
 	'gene_name'	=> 'HGNC',
 	'havana_gene'	=> HAVANA_NS,
@@ -46,8 +47,14 @@ my %FeaturesNSMap = (
 );
 
 my %MainFeatures = (
-	'gene' => undef,
-	'transcript' => undef,
+	'gene' =>  {
+		'gene_name'	=> undef,
+		'havana_gene'	=> undef,
+	},
+	'transcript' => {
+		'transcript_name'	=> undef,
+		'havana_transcript'	=> undef,
+	},
 	'exon' => undef
 );
 
@@ -148,8 +155,8 @@ sub parseGTF(@) {
 					}
 				],
 				'symbol'	=> [{
-					'ns'	=>	BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
-					'name'	=>	\@ensemblIds,
+					'domain'	=>	BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+					'value'	=>	\@ensemblIds,
 				}],
 			};
 			
@@ -160,34 +167,32 @@ sub parseGTF(@) {
 	}
 	
 	if($p_regionData) {
-		FEATURES:
-		foreach my $feature (keys(%attributes)) {
-			my $ns = exists($FeaturesNSMap{$feature}) ? $FeaturesNSMap{$feature} : $feature;
-			my $val = $attributes{$feature};
-			# Inefficient, but effective
-			my $p_name = undef;
-			foreach my $p_sym (@{$p_regionData->{'symbol'}}) {
-				if($p_sym->{'ns'} eq $ns) {
-					$p_name = $p_sym->{'name'};
-					
-					last;
-				}
+		foreach my $attribute (keys(%attributes)) {
+			# Pairs of attribute type and attribute namespace
+			my @attributePairs = (['attribute',$attribute]);
+			if(exists($AttributesNSMap{$attribute})) {
+				push(@attributePairs, [ exists($MainFeatures{$feature}{$attribute}) ? 'symbol' : 'attribute' , $AttributesNSMap{$attribute}]);
 			}
 			
-			unless(defined($p_name)) {
-				$p_name = [];
-				push(@{$p_regionData->{'symbol'}},{'ns' => $ns, 'name' => $p_name});
-			}
+			my $val = $attributes{$attribute};
 			
-			# Inefficient, but effective
-			foreach my $sym (@{$p_name}) {
-				if($sym eq $val) {
-					#$val = undef;
-					
-					next FEATURES;
+			ATTRIBUTE_PAIR:
+			foreach my $p_attributePair (@attributePairs) {
+				my($attributeType,$ns) = @{$p_attributePair};
+				# Inefficient, but effective
+				foreach my $p_sym (@{$p_regionData->{$attributeType}}) {
+					if($p_sym->{'domain'} eq $ns) {
+						my $p_name = $p_sym->{'value'};
+						
+						# Inefficient, but effective
+						push(@{$p_name},$val)  unless($val ~~ @{$p_name});
+						
+						next ATTRIBUTE_PAIR;
+					}
 				}
+				
+				push(@{$p_regionData->{$attributeType}},{'domain' => $ns, 'value' => [$val]});
 			}
-			push(@{$p_name},$val);
 		}
 		
 		# Last, save it!!!

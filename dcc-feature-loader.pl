@@ -45,14 +45,32 @@ use constant {
 	REACTOME_INTERACTIONS_FILE	=> 'homo_sapiens.interactions.txt.gz',
 	REACTOME_PATHWAYS_FILE	=> 'Ensembl2Reactome_All_Levels.txt',
 	REACTOME_COMPLEXES_FILE	=> 'curated_complexes.stid.txt',
+	
+	APPRIS_BASE_TAG	=> 'appris-base-uri',
+	APPRIS_PRINCIPAL_FILE	=> 'appris_data.principal.txt',
 };
 
+sub parseAPPRISPrincipal($$$);
+sub parseReactomeComplexDesc($$$);
 sub parseReactomeInteractions($$$$$);
 sub parseReactomePathways($$$$);
 
 #####
 # Method bodies
 #####
+use constant PRINCIPAL_PREFIX	=> 'PRINCIPAL:';
+use constant PRINCIPAL_LENGTH	=> length(PRINCIPAL_PREFIX);
+
+sub parseAPPRISPrincipal($$$) {
+	my($p_ENShash,$transcript_id,$principal_status)=@_;
+	
+	if(substr($principal_status,0,PRINCIPAL_LENGTH) eq PRINCIPAL_PREFIX && exists($p_ENShash->{$transcript_id})) {
+		push(@{$p_ENShash->{$transcript_id}{'attribute'}},{'domain' => 'APPRIS_PRINCIPAL', 'value' => [substr($principal_status,PRINCIPAL_LENGTH)]});
+	}
+	
+	1;
+}
+
 my @TRANSKEYS = ('chromosome','chromosome_start','chromosome_end');
 
 use constant REACTOME_NS => 'Reactome';
@@ -71,12 +89,12 @@ sub parseReactomePathways($$$$) {
 			'coordinates'	=> [],
 			'symbol'	=> [
 				{
-					'ns' => REACTOME_NS,
-					'name' => [$stablePathwayId]
+					'domain' => REACTOME_NS,
+					'value' => [$stablePathwayId]
 				},
 				{
-					'ns' => 'description',
-					'name' => [ $pathwayName ]
+					'domain' => 'description',
+					'value' => [ $pathwayName ]
 				}
 			]
 		}  unless(exists($p_pathways->{$stablePathwayId}));
@@ -116,13 +134,13 @@ sub parseReactomeInteractions($$$$$) {
 				unless(exists($p_pathways->{$pathway_id})) {
 					my @symbols = (
 						{
-							'ns' => REACTOME_NS,
-							'name' => [$pathway_id]
+							'domain' => REACTOME_NS,
+							'value' => [$pathway_id]
 						}
 					);
 					push(@symbols,{
-						'ns' => 'description',
-						'name' => [ $p_complexDesc->{$pathway_id} ]
+						'domain' => 'description',
+						'value' => [ $p_complexDesc->{$pathway_id} ]
 					})  if(exists($p_complexDesc->{$pathway_id}));
 					$p_pathways->{$pathway_id} = {
 						'feature_cluster_id'	=> [$pathway_id],
@@ -193,6 +211,13 @@ if(scalar(@ARGV)>=2) {
 		}
 	}
 	
+	my $appris_http_base = undef;
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,APPRIS_BASE_TAG)) {
+		$appris_http_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,APPRIS_BASE_TAG);
+	} else {
+		Carp::croak("Configuration file $iniFile must have '".APPRIS_BASE_TAG."'");
+	}
+	
 	Carp::croak('ERROR: undefined destination storage model')  unless($ini->exists($BP::Loader::Mapper::SECTION,'loaders'));
 	
 	# Zeroth, load the data model
@@ -215,6 +240,9 @@ if(scalar(@ARGV)>=2) {
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
 	eval {
+		$model->annotations->applyAnnotations(\($appris_http_base));
+		$appris_http_base = URI->new($appris_http_base);
+		
 		$model->annotations->applyAnnotations(\($reactome_bundle_file))  if(defined($reactome_bundle_file));
 	};
 	
@@ -270,8 +298,33 @@ if(scalar(@ARGV)>=2) {
 		$LOG->info("Skipping Reactome");
 	} 
 	
+	$LOG->info("Connecting to $appris_http_base...");
+	my $appris_principal_uri = $appris_http_base->clone();
+	my @apprisSeg = $appris_http_base->path_segments();
+	pop(@apprisSeg)  if($apprisSeg[$#apprisSeg] eq '');
+	$appris_principal_uri->path_segments(@apprisSeg,APPRIS_PRINCIPAL_FILE);
+	
+	my $appris_principal_local = $workingDir->mirror($appris_principal_uri);
+	
 	# Defined outside
-	my($p_Gencode,$p_PAR,$p_ENShash) = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($model,$workingDir,$ini,$testmode);
+	# my($p_Gencode,undef,$p_ENShash)
+	my(undef,undef,$p_ENShash) = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($model,$workingDir,$ini,$testmode);
+	
+	# Now, let's enrich the transcripts labeled as principal
+	if(open(my $APPRIS,'<',$appris_principal_local)) {
+		my %config = (
+			TabParser::TAG_CONTEXT	=> $p_ENShash,
+			TabParser::TAG_CALLBACK => \&parseAPPRISPrincipal,
+			TabParser::TAG_FOLLOW	=> 1,	# We had to add it in order to avoid crap from Reactome generators
+			TabParser::TAG_FETCH_COLS => [2,4],
+		);
+		$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
+		TabParser::parseTab($APPRIS,%config);
+		
+		close($APPRIS);
+	} else {
+		Carp::croak("ERROR: Unable to open APPRIS principal isoforms file ".$appris_principal_local);
+	}
 	
 	# Storing the final genes and transcripts data
 	#use JSON;
@@ -283,9 +336,18 @@ if(scalar(@ARGV)>=2) {
 		} else {
 			$LOG->info("[TESTMODE] Skipping storage of remaining gene and transcript coordinates");
 			#$mapper->validateAndEnactEntry($p_Gencode);
+			use Devel::Size qw();
+			print 'SIZE ',Devel::Size::size($p_ENShash),' TOTAL SIZE ',Devel::Size::total_size($p_ENShash),"\n";
+			
+			#my $before = `ps h -o vsz $$`;
+			
 			#foreach my $entry (values(%{$p_ENShash})) {
 			#	print $j->encode($entry),"\n";
 			#}
+			
+			#my $after = `ps h -o vsz $$`;
+			#print "DEBUG: $before $after ",$after-$before,"\n";
+			#exit(1);
 			$mapper->validateAndEnactEntry(values(%{$p_ENShash}));
 		}
 		#$mapper->freeDestination();
@@ -373,7 +435,7 @@ if(scalar(@ARGV)>=2) {
 				
 				close($REACT);
 				
-				%foundInter=();
+				undef %foundInter;
 				
 				foreach my $mapper (@mappers) {
 					unless($testmode) {
