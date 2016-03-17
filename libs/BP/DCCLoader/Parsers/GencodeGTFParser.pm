@@ -34,11 +34,24 @@ use constant {
 };
 
 use constant HAVANA_NS	=> 'HAVANA';
+
+use constant {
+	GENE_ID => 'gene_id',
+	TRANSCRIPT => 'transcript',
+	TRANSCRIPT_ID => 'transcript_id'
+};
+
+use constant {
+	SEEN_ID_KEY => 'se',
+	GENE_CACHE_KEY => 'gc',
+	FEATURES_LIST_KEY => 'feat'
+};
+
 my %AttributesNSMap = (
-	'gene_id'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+	GENE_ID()	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
 	'gene_name'	=> 'HGNC',
 	'havana_gene'	=> HAVANA_NS,
-	'transcript_id'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
+	TRANSCRIPT_ID()	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
 	'transcript_name'	=> BP::DCCLoader::Parsers::EnsemblGTParser::DESCRIPTION_NS,
 	'havana_transcript'	=> HAVANA_NS,
 	'exon_id'	=> BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_NS,
@@ -51,7 +64,7 @@ my %MainFeatures = (
 		'gene_name'	=> undef,
 		'havana_gene'	=> undef,
 	},
-	'transcript' => {
+	TRANSCRIPT() => {
 		'transcript_name'	=> undef,
 		'havana_transcript'	=> undef,
 	},
@@ -59,10 +72,10 @@ my %MainFeatures = (
 );
 
 my %FeaturesKeys = (
-	'gene' => 'gene_id',
-	'transcript' => 'transcript_id',
-	'Selenocysteine' => 'transcript_id',
-	'UTR' => 'transcript_id',
+	'gene' => GENE_ID,
+	TRANSCRIPT() => TRANSCRIPT_ID,
+	'Selenocysteine' => TRANSCRIPT_ID,
+	'UTR' => TRANSCRIPT_ID,
 	'exon' => 'exon_id',
 	'CDS' => 'exon_id',
 	'start_codon' => 'exon_id',
@@ -70,14 +83,14 @@ my %FeaturesKeys = (
 );
 
 my %FeaturesClusterKeys = (
-	'gene' => ['gene_id'],
-	'transcript' => ['gene_id','transcript_id'],
-	'Selenocysteine' => ['gene_id','transcript_id'],
-	'UTR' => ['gene_id','transcript_id'],
-	'exon' => ['gene_id','transcript_id','exon_id'],
-	'CDS' => ['gene_id','transcript_id','exon_id'],
-	'start_codon' => ['gene_id','transcript_id','exon_id'],
-	'stop_codon' => ['gene_id','transcript_id','exon_id'],
+	'gene' => [GENE_ID],
+	TRANSCRIPT() => [GENE_ID,TRANSCRIPT_ID],
+	'Selenocysteine' => [GENE_ID,TRANSCRIPT_ID],
+	'UTR' => [GENE_ID,TRANSCRIPT_ID],
+	'exon' => [GENE_ID,TRANSCRIPT_ID,'exon_id'],
+	'CDS' => [GENE_ID,TRANSCRIPT_ID,'exon_id'],
+	'start_codon' => [GENE_ID,TRANSCRIPT_ID,'exon_id'],
+	'stop_codon' => [GENE_ID,TRANSCRIPT_ID,'exon_id'],
 );
 
 sub parseGTF(@) {
@@ -94,7 +107,9 @@ sub parseGTF(@) {
 		$attributes_str, # attributes following .ace format
 	) = @_;
 	
-	my($p_ENShash,$p_Gencode,$p_PAR,$chroCV) = @{$payload};
+	my($p_ENShash,$p_APPRISannot,$chroCV,$batchProcessor,$p_batchCache) = @{$payload};
+	
+	$p_batchCache->{GENE_ID()} = ''  unless(exists($p_batchCache->{GENE_ID()}));
 	
 	my %attributes = ();
 	
@@ -109,33 +124,55 @@ sub parseGTF(@) {
 		$attributes{$key} = $value;
 	}
 	
+	# Micro-cache management
+	my $currentGeneId = $attributes{GENE_ID()};
+	my $p_currentCache;
+	my $p_currentBatchData;
+	if($currentGeneId eq $p_batchCache->{GENE_ID()}) {
+		$p_currentCache = $p_batchCache->{GENE_CACHE_KEY()};
+		$p_currentBatchData = $p_batchCache->{FEATURES_LIST_KEY()};
+	} else {
+		# Run the batchProcessor just here
+		$batchProcessor->($p_batchCache->{FEATURES_LIST_KEY()})  if(defined($batchProcessor) && exists($p_batchCache->{FEATURES_LIST_KEY()}));
+		
+		$p_batchCache->{GENE_ID()} = $currentGeneId;
+		$p_currentCache = {};
+		$p_currentBatchData = [];
+		$p_batchCache->{GENE_CACHE_KEY()} = $p_currentCache;
+		$p_batchCache->{FEATURES_LIST_KEY()} = $p_currentBatchData;
+	}
+	
 	my $p_regionData = undef;
-	my $local = 1;
 	
 	my $ensIdKey = undef;
 	my $p_ensFeatures = undef;
 	if(exists($FeaturesKeys{$feature})) {
 		$ensIdKey = $FeaturesKeys{$feature};
 	} else {
-		$ensIdKey = 'transcript_id';
+		$ensIdKey = TRANSCRIPT_ID;
 	}
 	
 	my $fullEnsemblId = $attributes{$ensIdKey};
-	my @ensemblIds = ($fullEnsemblId);
+	my @ensemblIds;
 	my $ensemblId = undef;
 	if(exists($MainFeatures{$feature})) {
 		$ensemblId = substr($fullEnsemblId,0,index($fullEnsemblId,'.'));
-		push(@ensemblIds,$ensemblId);
+		@ensemblIds = ($fullEnsemblId,$ensemblId);
 	} else {
 		$fullEnsemblId .= '.'.$feature;
 		$ensemblId = $fullEnsemblId;
+		@ensemblIds = ($fullEnsemblId);
 	}
-	if(exists($p_ENShash->{$ensemblId})) {
+	
+	my $local;
+	if(exists($p_currentCache->{$ensemblId})) {
+		$p_regionData = $p_currentCache->{$ensemblId};
+	} elsif(exists($MainFeatures{$feature}) && exists($p_ENShash->{$ensemblId})) {
 		$p_regionData = $p_ENShash->{$ensemblId};
-		$local = undef;
 	} else {
 		my $term = $chroCV->getTerm($chro);
 		if($term) {
+			$local = 1;
 			#print "DEBUG: $chro $feature\n"  unless(exists($FeaturesClusterKeys{$feature}));
 			my @feature_cluster_ids = exists($FeaturesClusterKeys{$feature}) ? @attributes{@{$FeaturesClusterKeys{$feature}}} : ( $ensIdKey );
 			$p_regionData = {
@@ -167,11 +204,12 @@ sub parseGTF(@) {
 	}
 	
 	if($p_regionData) {
+		my $p_fea = exists($MainFeatures{$feature}) ? $MainFeatures{$feature} : {};
 		foreach my $attribute (keys(%attributes)) {
 			# Pairs of attribute type and attribute namespace
 			my @attributePairs = (['attribute',$attribute]);
 			if(exists($AttributesNSMap{$attribute})) {
-				push(@attributePairs, [ exists($MainFeatures{$feature}{$attribute}) ? 'symbol' : 'attribute' , $AttributesNSMap{$attribute}]);
+				push(@attributePairs, [ exists($p_fea->{$attribute}) ? 'symbol' : 'attribute' , $AttributesNSMap{$attribute}]);
 			}
 			
 			my $val = $attributes{$attribute};
@@ -195,19 +233,32 @@ sub parseGTF(@) {
 			}
 		}
 		
+		# APPRIS enrichment (only once!)
+		if($feature eq TRANSCRIPT && exists($p_APPRISannot->{$ensemblId})) {
+			push(@{$p_regionData->{'attribute'}},{'domain' => 'APPRIS_PRINCIPAL', 'value' => [$p_APPRISannot->{$ensemblId}]});
+			#delete($p_APPRISannot->{$ensemblId});
+		}
+		
 		# Last, save it!!!
-		if($local) {
-			push(@{$p_Gencode},$p_regionData);
+		unless(exists($p_currentCache->{$ensemblId})) {
+			# Saving it for the micro-cache
+			$p_batchCache->{SEEN_ID_KEY()} = {}  unless(exists($p_batchCache->{SEEN_ID_KEY()}));
+			$p_batchCache->{SEEN_ID_KEY()}{$ensemblId} = undef;
+			$p_currentCache->{$ensemblId} = $p_regionData;
+			push(@{$p_currentBatchData},$p_regionData);
+		}
+		
+		# This is needed in order to avoid missing genes, transcripts or exons
+		if($local && exists($MainFeatures{$feature})) {
 			$p_ENShash->{$ensemblId} = $p_regionData;
-			$p_PAR->{$ensemblId} = $p_regionData  if(exists($MainFeatures{$feature}));
 		}
 	}
 	
 	1;
 }
 
-sub getGencodeCoordinates($$$;$) {
-	my($model,$workingDir,$ini,$testmode) = @_;
+sub getGencodeCoordinates($$$;$$$) {
+	my($model,$workingDir,$ini,$testmode,$p_APPRISannot,$batchProcessor) = @_;
 	
 	my $gencode_ftp_base = undef;
 	my $gencode_gtf_file = undef;
@@ -258,25 +309,47 @@ sub getGencodeCoordinates($$$;$) {
 	
 	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
 	my $p_ENShash = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($model,$workingDir,$ini,$testmode);
+	#my $p_ENShash;
+	#use Test::LeakTrace;
+	#my $leakedRefs = leaked_info {
+	#	$p_ENShash = BP::DCCLoader::Parsers::EnsemblGTParser::getEnsemblCoordinates($model,$workingDir,$ini,$testmode);
+	#};
+	#foreach my $leak (@{$leakedRefs}) {
+	#	print STDERR "DEBUG: Leaked: $leak->[1] : $leak->[2]\n";
+	#}
+	#exit(1);
 	
 	$LOG->info("Parsing ".$localGTF);
-	my @Gencode = ();
-	my %PAR = ();
 	if(open(my $GTF,'-|',BP::Loader::Tools::GUNZIP,'-c',$localGTF)) {
+		my %batchCache;
 		my %config = (
 			TabParser::TAG_COMMENT	=>	'#',
-			TabParser::TAG_CONTEXT	=> [$p_ENShash,\@Gencode, \%PAR, $chroCV],
+			# Fourth parameter is a temporal storage used along the full parsing process
+			TabParser::TAG_CONTEXT	=> [$p_ENShash,$p_APPRISannot, $chroCV, $batchProcessor, \%batchCache],
 			TabParser::TAG_CALLBACK => \&parseGTF,
 		);
 		$config{TabParser::TAG_VERBOSE} = 1  if($testmode);
 		TabParser::parseTab($GTF,%config);
 		
 		close($GTF);
+		
+		# And last steps!
+		if(defined($batchProcessor) && exists($batchCache{FEATURES_LIST_KEY()})) {
+			# First, the last registered ones
+			$batchProcessor->($batchCache{FEATURES_LIST_KEY()});
+			# And then, the ones which are not in Gencode
+			my @onlyInEnsembl = ();
+			my $p_seenEnsIds = $batchCache{SEEN_ID_KEY()};
+			foreach my $ensemblId (keys(%{$p_ENShash})) {
+				push(@onlyInEnsembl,$p_ENShash->{$ensemblId})  unless(exists($p_seenEnsIds->{$ensemblId}));
+			}
+			$batchProcessor->(\@onlyInEnsembl);
+		}
 	} else {
 		Carp::croak("ERROR: Unable to open EnsEMBL XREF file ".$localGTF);
 	}
 	
-	return wantarray ? (\@Gencode,\%PAR,$p_ENShash) : \@Gencode;
+	return $p_ENShash;
 }
 
 1;

@@ -54,13 +54,7 @@ sub getGencodeCoordinates() {
 	my $self = shift;
 	
 	unless($p_GThash) {
-		my $p_Gencode;
-		my $p_PAR;
-		($p_Gencode,$p_PAR,$p_GThash) = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_WORKINGDIR},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_INI});
-		
-		# Collapsing Gencode unique genes and transcripts into Ensembl's hash
-		# not needed any more
-		#@{$p_GThash}{keys(%{$p_PAR})} = values(%{$p_PAR});
+		$p_GThash = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_MODEL},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_WORKINGDIR},$self->{BP::DCCLoader::Parsers::AbstractInsertionParser::K_INI});
 	}
 	
 	return $p_GThash;

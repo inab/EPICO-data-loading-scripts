@@ -62,10 +62,14 @@ use constant PRINCIPAL_PREFIX	=> 'PRINCIPAL:';
 use constant PRINCIPAL_LENGTH	=> length(PRINCIPAL_PREFIX);
 
 sub parseAPPRISPrincipal($$$) {
-	my($p_ENShash,$transcript_id,$principal_status)=@_;
+	my($p_APPRISannot,$transcript_id,$principal_status)=@_;
 	
-	if(substr($principal_status,0,PRINCIPAL_LENGTH) eq PRINCIPAL_PREFIX && exists($p_ENShash->{$transcript_id})) {
-		push(@{$p_ENShash->{$transcript_id}{'attribute'}},{'domain' => 'APPRIS_PRINCIPAL', 'value' => [substr($principal_status,PRINCIPAL_LENGTH)]});
+	if(substr($principal_status,0,PRINCIPAL_LENGTH) eq PRINCIPAL_PREFIX) {
+		my $dotpos = index($transcript_id,'.');
+		$transcript_id = substr($transcript_id,0,$dotpos)  if($dotpos!=-1);
+		
+		$p_APPRISannot->{$transcript_id} = substr($principal_status,PRINCIPAL_LENGTH);
+		#push(@{$p_ENShash->{$transcript_id}{'attribute'}},{'domain' => 'APPRIS_PRINCIPAL', 'value' => [substr($principal_status,PRINCIPAL_LENGTH)]});
 	}
 	
 	1;
@@ -162,6 +166,19 @@ sub parseReactomeInteractions($$$$$) {
 	}
 	
 	1;
+}
+
+sub postprocessFeatures(\@) {
+	my $p_data = shift;
+	
+	# Post-processing
+	foreach my $p_regionData (@{$p_data}) {
+		my @keywords = ();
+		foreach my $symbol (@{$p_regionData->{'symbol'}}) {
+			push(@keywords,@{$symbol->{'value'}});
+		}
+		$p_regionData->{'keyword'} = \@keywords;
+	}
 }
 
 #####
@@ -306,14 +323,12 @@ if(scalar(@ARGV)>=2) {
 	
 	my $appris_principal_local = $workingDir->mirror($appris_principal_uri);
 	
-	# Defined outside
-	# my($p_Gencode,undef,$p_ENShash)
-	my(undef,undef,$p_ENShash) = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($model,$workingDir,$ini,$testmode);
-	
-	# Now, let's enrich the transcripts labeled as principal
+	# Now, let's get the information to enrich the transcripts labelled as principal
+	$LOG->info("Parsing ".$appris_principal_local);
+	my %APPRISannot;
 	if(open(my $APPRIS,'<',$appris_principal_local)) {
 		my %config = (
-			TabParser::TAG_CONTEXT	=> $p_ENShash,
+			TabParser::TAG_CONTEXT	=> \%APPRISannot,
 			TabParser::TAG_CALLBACK => \&parseAPPRISPrincipal,
 			TabParser::TAG_FOLLOW	=> 1,	# We had to add it in order to avoid crap from Reactome generators
 			TabParser::TAG_FETCH_COLS => [2,4],
@@ -326,32 +341,49 @@ if(scalar(@ARGV)>=2) {
 		Carp::croak("ERROR: Unable to open APPRIS principal isoforms file ".$appris_principal_local);
 	}
 	
-	# Storing the final genes and transcripts data
-	#use JSON;
-	#my $j = JSON->new->pretty->allow_blessed();
-	foreach my $mapper (@mappers) {
-		unless($testmode) {
-			#$mapper->bulkInsert($p_Gencode);
-			$mapper->bulkInsert(values(%{$p_ENShash}));
-		} else {
-			$LOG->info("[TESTMODE] Skipping storage of remaining gene and transcript coordinates");
-			#$mapper->validateAndEnactEntry($p_Gencode);
-			use Devel::Size qw();
-			print 'SIZE ',Devel::Size::size($p_ENShash),' TOTAL SIZE ',Devel::Size::total_size($p_ENShash),"\n";
+	my $batchProcessor;
+	if($testmode) {
+		$LOG->info("[TESTMODE] Skipping storage of remaining gene and transcript coordinates");
+		$batchProcessor = sub {
+			my $p_data = shift;
 			
-			#my $before = `ps h -o vsz $$`;
+			# Post-processing
+			postprocessFeatures(@{$p_data});
 			
-			#foreach my $entry (values(%{$p_ENShash})) {
-			#	print $j->encode($entry),"\n";
-			#}
+			# Storing the final genes and transcripts data
+			#use JSON;
+			#my $j = JSON->new->pretty->allow_blessed();
+			foreach my $mapper (@mappers) {
+				$mapper->validateAndEnactEntry($p_data);
+				#use Devel::Size qw();
+				#print 'SIZE ',Devel::Size::size($p_ENShash),' TOTAL SIZE ',Devel::Size::total_size($p_ENShash),"\n";
+				
+				#my $before = `ps h -o vsz $$`;
+				
+				#foreach my $entry (values(%{$p_ENShash})) {
+				#	print $j->encode($entry),"\n";
+				#}
+				
+				#my $after = `ps h -o vsz $$`;
+				#print "DEBUG: $before $after ",$after-$before,"\n";
+				#exit(1);
+			}
+		};
+	} else {
+		$batchProcessor = sub {
+			my $p_data = shift;
 			
-			#my $after = `ps h -o vsz $$`;
-			#print "DEBUG: $before $after ",$after-$before,"\n";
-			#exit(1);
-			$mapper->validateAndEnactEntry(values(%{$p_ENShash}));
-		}
-		#$mapper->freeDestination();
+			# Post-processing
+			postprocessFeatures(@{$p_data});
+			
+			foreach my $mapper (@mappers) {
+				$mapper->bulkInsert($p_data);
+			}
+		};
 	}
+	
+	# The storage or the test is done in the callback
+	my $p_ENShash = BP::DCCLoader::Parsers::GencodeGTFParser::getGencodeCoordinates($model,$workingDir,$ini,$testmode,\%APPRISannot,$batchProcessor);
 	
 	# And now, the pathways!
 	if(defined($reactome_bundle_local)) {
@@ -375,15 +407,17 @@ if(scalar(@ARGV)>=2) {
 				
 				close($REACTPATH);
 				
+				my @pathwaysArr = values(%pathways);
+				postprocessFeatures(@pathwaysArr);
 				foreach my $mapper (@mappers) {
 					unless($testmode) {
-						$mapper->bulkInsert(values(%pathways));
+						$mapper->bulkInsert(\@pathwaysArr);
 					} else {
 						$LOG->info("[TESTMODE] Skipping storage of pathways mappings");
 						#foreach my $entry (values(%pathways)) {
 						#	print $j->encode($entry),"\n";
 						#}
-						my $entorp = $mapper->validateAndEnactEntry(values(%pathways));
+						my $entorp = $mapper->validateAndEnactEntry(\@pathwaysArr);
 					}
 				}
 			} else {
@@ -437,15 +471,17 @@ if(scalar(@ARGV)>=2) {
 				
 				undef %foundInter;
 				
+				my @reactionsArr = values(%reactions);
+				postprocessFeatures(@reactionsArr);
 				foreach my $mapper (@mappers) {
 					unless($testmode) {
-						$mapper->bulkInsert(values(%reactions));
+						$mapper->bulkInsert(\@reactionsArr);
 					} else {
 						$LOG->info("[TESTMODE] Skipping storage of reactions mappings");
-						#foreach my $entry (values(%reactions)) {
+						#foreach my $entry (@reactionsArr) {
 						#	print $j->encode($entry),"\n";
 						#}
-						my $entorp = $mapper->validateAndEnactEntry(values(%reactions));
+						my $entorp = $mapper->validateAndEnactEntry(\@reactionsArr);
 					}
 					$mapper->freeDestination();
 				}

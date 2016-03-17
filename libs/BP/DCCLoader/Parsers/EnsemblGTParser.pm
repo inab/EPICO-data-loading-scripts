@@ -496,6 +496,16 @@ sub getEnsemblCoordinates($$$;$) {
 	
 	my $chroCV = $model->getNamedCV('ChromosomesAndScaffolds');
 		
+	#use Test::LeakTrace;
+	#my $retval;
+	#my $leakedRefs = leaked_info {
+	#	$retval = parseEnsemblGenesAndTranscripts($chroCV,$testmode,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localExonTranscripts,$localExons,$localXref,$localExternalDB);
+	#};
+	#foreach my $leak (@{$leakedRefs}) {
+	#	print STDERR "DEBUG: Leaked: $leak->[1] : $leak->[2]\n";
+	#}
+	#exit(1);
+	#return $retval;
 	return parseEnsemblGenesAndTranscripts($chroCV,$testmode,$localSQLFile,$localSeqRegion,$localGenes,$localTranscripts,$localExonTranscripts,$localExons,$localXref,$localExternalDB);
 }
 
