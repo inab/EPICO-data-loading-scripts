@@ -1,7 +1,7 @@
-BLUEPRINT-dcc-loading-scripts
+EPICO-data-loading-scripts
 =============================
 
-In order to use BLUEPRINT DCC database loading scripts you need to install the modules needed by BP-Schema-tools, and the next Perl modules:
+In order to use the available scripts you need to install the modules needed by BP-Schema-tools, as well as the next Perl modules:
 
 * Config::IniFiles
 * Net::FTP::AutoReconnect
