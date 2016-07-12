@@ -167,8 +167,15 @@ sub parseIHECexperiment($$$$);
 
 sub experiments_to_datasets_callback(\%$$$) {
 	my($p_exp2EGA,$experiment_id, $title, $dataset_id) = @_;
+	
+	# The file could contain spureous contentse
+	$p_exp2EGA->{$experiment_id} = $dataset_id  if(index($title,'GRCh38')!=-1);
+}
 
-	$p_exp2EGA->{$experiment_id} = $dataset_id;
+sub datasets_parse_callback(\%$) {
+	my($payload,$experiment_id) = @_;
+
+	$payload->{exp2EGA}->{$experiment_id} = $payload->{dataset_id};
 }
 
 sub data_files_callback {
@@ -885,10 +892,17 @@ if(scalar(@ARGV)>=2) {
 	my $exp2datasets;
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'exp2datasets-file')) {
 		$exp2datasets = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'exp2datasets-file');
-	} else {
-		$exp2datasets = EXPERIMENTS2DATASETS_DEFAULT;
 	}
 	
+	my $egaDataSetsPath;
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'egadatasets-path')) {
+		$egaDataSetsPath = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'egadatasets-path');
+	}
+	
+	# Use the internal file as reference in case of the EGA datasets path not defined
+	unless(defined($egaDataSetsPath) || defined($exp2datasets)) {
+		$exp2datasets = EXPERIMENTS2DATASETS_DEFAULT;
+	}
 	
 	# First, explicitly create the caching directory
 	$workingDir = BP::DCCLoader::WorkingDir->new($cachingDir);
@@ -908,11 +922,8 @@ if(scalar(@ARGV)>=2) {
 	
 	my $localIndexPath = $workingDir->cachedGet($bpDataServer,join('/',$blueprintFTPRel , $indexPath , $publicIndex));
 	my $localDataFilesIndexPath = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $dataIndex));
-	my $localExp2Datasets = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $exp2datasets));
 	
 	if(defined($localIndexPath)) {
-		$LOG->warn("Unable to fetch experiments to datasets correspondence from $blueprintMetadataFTPRel $metadataIndexPath (host $metadataHost)")  unless(defined($localExp2Datasets));
-		
 
 		# Try getting a connection to 
 		
@@ -957,22 +968,66 @@ if(scalar(@ARGV)>=2) {
 		});
 
 		# First, these correspondences experiment <=> EGA needed by next parse
-		if(defined($localExp2Datasets)) {
-			$LOG->info("Parsing $exp2datasets...");
-			if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
-				my %e2dConfig = (
-					TabParser::TAG_HAS_HEADER	=> 1,
-					TabParser::TAG_CONTEXT	=> \%exp2EGA,
-					TabParser::TAG_CALLBACK => \&experiments_to_datasets_callback,
-				);
-				$e2dConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
-				TabParser::parseTab($E2D,%e2dConfig);
-				close($E2D);
+		if(defined($egaDataSetsPath)) {
+			$LOG->info("Parsing datasets from $egaDataSetsPath...");
+			my $egaDataSetsRemotePath = join('/',$blueprintFTPRel,$egaDataSetsPath);
+			my $p_egaDataSetsFiles = $workingDir->listing($bpDataServer,$egaDataSetsRemotePath);
+			
+			if(defined($p_egaDataSetsFiles)) {
+				# Let's fetch all the dataset definitions
+				foreach my $dataSetPath (@{$p_egaDataSetsFiles}) {
+					if($dataSetPath =~ /(EGA[DS][0-9]*)_[^\/]+_analysis_files.tsv$/) {
+						my $dataset_id = $1;
+						
+						my $localDataSetFile = $workingDir->cachedGet($bpDataServer,$dataSetPath);
+						if(defined($localDataSetFile)) {
+							$LOG->info("* Parsing $dataSetPath...");
+							
+							if(open(my $E2DF,'<:encoding(UTF-8)',$localDataSetFile)) {
+								my %e2dfConfig = (
+									TabParser::TAG_HAS_HEADER	=> 1,
+									TabParser::TAG_CONTEXT	=> {
+										'exp2EGA'	=>	\%exp2EGA,
+										'dataset_id'	=>	$dataset_id
+									},
+									TabParser::TAG_FETCH_COLS => ['EXPERIMENT_ID'],
+									TabParser::TAG_CALLBACK => \&datasets_parse_callback,
+								);
+								$e2dfConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
+								TabParser::parseTab($E2DF,%e2dfConfig);
+								close($E2DF);
+							} else {
+								$LOG->logwarn("Unable to parse $localDataSetFile, needed to get the correspondence to EGA dataset identifiers");
+							}
+						} else {
+							$LOG->warn("Unable to fetch experiments to datasets correspondence from $dataSetPath (host $host)");
+						}
+					}
+				}
 			} else {
-				$LOG->logdie("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
+				$LOG->warn("$egaDataSetsPath unavailable. raw_data_accession subfields will be empty");
 			}
 		} else {
-			$LOG->warn("$exp2datasets unavailable. raw_data_accession subfields will be empty");
+			my $localExp2Datasets = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $exp2datasets));
+			
+			if(defined($localExp2Datasets)) {
+				$LOG->info("Parsing $exp2datasets...");
+				if(open(my $E2D,'<:encoding(UTF-8)',$localExp2Datasets)) {
+					my %e2dConfig = (
+						TabParser::TAG_HAS_HEADER	=> 1,
+						TabParser::TAG_CONTEXT	=> \%exp2EGA,
+						TabParser::TAG_CALLBACK => \&experiments_to_datasets_callback,
+					);
+					$e2dConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
+					TabParser::parseTab($E2D,%e2dConfig);
+					close($E2D);
+				} else {
+					$LOG->logdie("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
+				}
+			} else {
+				$LOG->warn("Unable to fetch experiments to datasets correspondence from $blueprintMetadataFTPRel $metadataIndexPath (host $metadataHost)");
+				$LOG->warn("$exp2datasets unavailable. raw_data_accession subfields will be empty");
+			}
 		}
 		
 		my $publicIndexPayload = {
@@ -1034,7 +1089,7 @@ if(scalar(@ARGV)>=2) {
 				$LOG->logdie("Unable to parse $localDataFilesIndexPath, the accessory metadata holder");
 			}
 		} else {
-			$LOG->warn("Unable to fetch the accessory metadata holder from $blueprintMetadataFTPRel $metadataIndexPath $dataIndex (host $metadataHost)")  unless(defined($localExp2Datasets));
+			$LOG->warn("Unable to fetch the accessory metadata holder from $blueprintMetadataFTPRel $metadataIndexPath $dataIndex (host $metadataHost)")  unless(defined($dataIndex));
 
 		}
 

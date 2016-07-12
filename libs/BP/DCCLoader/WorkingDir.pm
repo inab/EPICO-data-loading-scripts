@@ -92,6 +92,29 @@ sub cachedGet($$) {
 	return _cachedGet($_[0],$_[1],$self->{workingDir},$self->{LOG});
 }
 
+# listing parameters:
+#	ftpServer: A Net::FTP or Net::FTP::AutoReconnect instance
+#	remotePath: The path to the resource to be fetched from the FTP server
+# It returns the list of files in that remote path, in absolute path format (as answered by the FTP server)
+sub listing($$) {
+	my $self = shift;
+	
+	$self->{LOG}->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
+	
+	my $ftpServer = shift;
+	my $remotePath = shift;
+	
+	my $p_listing = undef;
+	
+	$remotePath = '/'.$remotePath  unless(substr($remotePath,0,1) eq '/');
+	$p_listing = $ftpServer->ls($remotePath);
+	unless(defined($p_listing)) {
+		$self->{LOG}->warn("Cannot directory $remotePath listing. Reason: ". $ftpServer->message);
+	}
+	
+	return $p_listing;
+}
+
 # mirror parameters:
 #	resourceURI: An URI instance, pointing to the resource to be fetched
 #	localPath: a relative name or path where the resource is going to be stored (optional)
