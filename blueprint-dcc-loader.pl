@@ -51,6 +51,7 @@ BEGIN {
 use constant {
 	PUBLIC_INDEX_DEFAULT	=>	'public.results.index',
 	DATA_INDEX_DEFAULT	=>	'data_files.index',
+	DEFAULT_FTP_REL	=>	'/',
 	EXPERIMENTS2DATASETS_DEFAULT	=>	'experiments2datasets.txt'
 };
 
@@ -79,7 +80,7 @@ use constant PUBLIC_INDEX_COLS => [
 	'SPECIMEN_PROCESSING',	# specimen_processing and specimen_processing_other
 	'SPECIMEN_STORAGE',	# specimen_storage and specimen_storage_other
 	'BIOMATERIAL_PROVIDER',	# specimen_biomaterial_provider
-	'SAMPLE_DESC_2',	# specimen_biomaterial_id ???
+	['SAMPLE_BARCODE','SAMPLE_DESC_2'],	# specimen_biomaterial_id ???
 	# specimen_available is unknown
 	# donor_id is already got from 'DONOR_ID'
 	
@@ -90,11 +91,13 @@ use constant PUBLIC_INDEX_COLS => [
 	# culture_conditions comes from IHEC metadata (CULTURE_CONDITIONS)
 	# markers comes from IHEC metadata (MARKERS)
 	# analyzed_sample_type must be set to 11 (other) to simplify
-	'SAMPLE_DESC_3',	# analyzed_sample_type_other
+	['SAMPLE_DESCRIPTION','SAMPLE_DESC_3'],	# analyzed_sample_type_other
 	# analyzed_sample_interval is unknown
 	# specimen_id is already derived from 'SAMPLE_ID'
 	
 	# lab_*
+	'STUDY_ID',	# study_id
+	'STUDY_NAME',	# study_name
 	'EXPERIMENT_ID',	# experiment_id
 	# analyzed_sample_id is already got from 'SAMPLE_ID'
 	# experiment_type is got from IHEC metadata (EXPERIMENT_TYPE)
@@ -197,6 +200,9 @@ sub data_files_callback {
 		$sample_name,
 		$purified_cell_type_uri,
 		$analyzed_sample_type_other,
+		
+		$study_id,
+		$study_name,
 		
 		$experiment_id,
 		$center_name,
@@ -302,6 +308,9 @@ sub public_results_callback {
 		$sample_name,
 		$purified_cell_type_uri,
 		$analyzed_sample_type_other,
+		
+		$study_id,
+		$study_name,
 		
 		$experiment_id,
 		$center_name,
@@ -411,7 +420,7 @@ sub public_results_callback {
 		
 		$LOG->logdie("Undefined specimen term for $specimen_id!!!!")  unless(defined($specimen_term));
 		
-		$p_IHECsample = parseIHECsample($payload->{bpDataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir});
+		$p_IHECsample = parseIHECsample($payload->{bpMetadataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir});
 		my %specimen = (
 			'specimen_id'	=>	$specimen_id,
 			'tissue_type'	=>	$tissue_type,
@@ -437,7 +446,9 @@ sub public_results_callback {
 	}
 	
 	unless(exists($payload->{samples}{$sample_id})) {
-		$p_IHECsample = parseIHECsample($payload->{bpDataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir})  unless(defined($p_IHECsample));
+		$p_IHECsample = parseIHECsample($payload->{bpMetadataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir})  unless(defined($p_IHECsample));
+		
+		my %sampleFeatures = map { $_ => { 'feature' => $_ , 'value' => $p_IHECsample->{$_} } } keys(%{$p_IHECsample});
 		
 		my $purified_cell_type = undef;
 
@@ -470,23 +481,34 @@ sub public_results_callback {
 			'analyzed_sample_type_other'	=>	$analyzed_sample_type_other,
 			'analyzed_sample_interval'	=>	undef,
 			'specimen_id'	=>	$specimen_id,
+			'features'	=>	\%sampleFeatures,
 		);
 		$payload->{samples}{$sample_id} = \%sample;
 	}
 	
 	if(exists($EXPERIMENTCV{$library_strategy})) {
+		unless(exists($payload->{studies}{$study_id})) {
+			my %study = (
+				'study_id'	=>	$study_id,
+				'study_name'	=>	$study_name
+			);
+			
+			$payload->{studies}{$study_id} = \%study;
+		}
+		
 		# This is the experimental metadata
 		unless(exists($payload->{experiments}{$experiment_id})) {
 			my $labexp = $EXPERIMENTCV{$library_strategy};
 			
-			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($payload->{bpDataServer},$payload->{metadataPath},$experiment_id,$payload->{workingDir});
+			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($payload->{bpMetadataServer},$payload->{metadataPath},$experiment_id,$payload->{workingDir});
 			
-			my %features = map { $_ => { 'feature' => $_ , 'value' => $p_IHECexperiment->{$_}[0], 'units' => $p_IHECexperiment->{$_}[1] } } keys(%{$p_IHECexperiment});
+			my %features = map { my $val = { 'feature' => $_ , 'value' => $p_IHECexperiment->{$_}[0] }; $val->{'units'} = $p_IHECexperiment->{$_}[1]  if(defined($p_IHECexperiment->{$_}[1])); $_ => $val } keys(%{$p_IHECexperiment});
 			
 			# The common attributes
 			my %experiment = (
 				'experiment_id'	=>	$experiment_id,
 				'analyzed_sample_id'	=>	$sample_id,
+				'study_id'	=>	$study_id,
 				'experiment_type'	=>	exists($p_IHECexperiment->{EXPERIMENT_TYPE})?$p_IHECexperiment->{EXPERIMENT_TYPE}[0]:'',
 				'library_strategy'	=>	defined($ihec_library_strategy)?$ihec_library_strategy:$library_strategy,
 				'experimental_group_id'	=>	exists($GROUPCV{$center_name})?$GROUPCV{$center_name}:[$center_name],
@@ -600,6 +622,28 @@ sub parseIHECexperiment($$$$) {
 	return (\%IHECexperiment,$library_strategy,$instrument_model);
 }
 
+# It creates a FTP or SFTP connection
+sub doBPConnect($$$$) {
+	my($protocol,$host,$user,$pass) = @_;
+	
+	my $bpDataServer = undef;
+	
+	if($protocol eq 'ftp') {
+		$bpDataServer = Net::FTP::AutoReconnect->new($host,Debug=>0) || $LOG->logdie("FTP connection to server $host failed: ".$@);
+		$bpDataServer->login($user,$pass) || $LOG->logdie("FTP login to server $host failed: ".$bpDataServer->message());
+		$bpDataServer->binary();
+	} elsif($protocol eq 'sftp') {
+		$LOG->logdie("Unfinished protocol $protocol. Ask the developers to finish it");
+		
+		$bpDataServer = Net::SFTP::Foreign->new('host' => $host,'user' => $user,'password' => $pass,'fs_encoding' => 'utf8');
+		$bpDataServer->die_on_error("SSH connection to server $host failed");
+	} else {
+		$LOG->logdie("Unknown protocol $protocol");
+	}
+	
+	return $bpDataServer;
+}
+
 my $testmode = undef;
 my $skipmode = undef;
 my $skipmodeText;
@@ -665,6 +709,9 @@ if(scalar(@ARGV)>=2) {
 	my %samples = ();
 	tie(%samples,'Tie::IxHash');
 	
+	my %studies = ();
+	tie(%studies,'Tie::IxHash');
+	
 	my %experiments = ();
 	
 	# Laboratory experiments and analysis metadata
@@ -689,6 +736,8 @@ if(scalar(@ARGV)>=2) {
 	# Parameters needed
 	# Either a Net::FTP or Net::FTP::AutoReconnect instance
 	my $bpDataServer = undef;
+	my $bpMetadataServer = undef;
+	
 	my $metadataPath = undef;
 	# A BP::DCCLoader::WorkingDir instance
 	my $workingDir = undef;
@@ -714,7 +763,16 @@ if(scalar(@ARGV)>=2) {
 	my $host = undef;
 	my $user = undef;
 	my $pass = undef;
+	my $blueprintFTPRel = undef;
 	my $indexPath = undef;
+
+	my $metadataProtocol = undef;
+	my $metadataHost = undef;
+	my $metadataUser = undef;
+	my $metadataPass = undef;
+	my $blueprintMetadataFTPRel = undef;
+	my $metadataIndexPath = undef;
+	
 	# Defined outside
 	$metadataPath = undef;
 	
@@ -734,20 +792,74 @@ if(scalar(@ARGV)>=2) {
 		$user = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'user');
 	} else {
 		$user = 'ftp'  if($protocol eq 'ftp');
-		$LOG->logdie("Configuration file $iniFile must have 'user'");
+		$LOG->logdie("Configuration file $iniFile must have 'user'")  unless(defined($user));
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'pass')) {
 		$pass = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'pass');
 	} else {
 		$pass = ($user eq 'ftp')?'guest@':''  if($protocol eq 'ftp');
-		$LOG->logdie("Configuration file $iniFile must have 'pass'");
+		$LOG->logdie("Configuration file $iniFile must have 'pass'")  unless(defined($pass));
+	}
+	
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'blueprint-rel')) {
+		$blueprintFTPRel = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'blueprint-rel');
+	} else {
+		$blueprintFTPRel = DEFAULT_FTP_REL;
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'index-path')) {
 		$indexPath = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'index-path');
 	} else {
 		$LOG->logdie("Configuration file $iniFile must have 'index-path'");
+	}
+	
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-protocol')) {
+		$metadataProtocol = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-protocol');
+	} else {
+		$metadataProtocol = $protocol;
+	}
+	
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-host')) {
+		$metadataHost = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-host');
+	} elsif($metadataProtocol eq $protocol) {
+		$metadataHost = $host;
+	} else {
+		$LOG->logdie("Configuration file $iniFile must have 'metadata-host'");
+	}
+	
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-user')) {
+		$metadataUser = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-user');
+	} elsif($metadataProtocol eq $protocol && $metadataHost eq $host) {
+		$metadataUser = $user;
+	} else {
+		$metadataUser = 'ftp'  if($metadataProtocol eq 'ftp');
+		$LOG->logdie("Configuration file $iniFile must have 'metadata-user'")  unless(defined($metadataUser));
+	}
+	
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-pass')) {
+		$metadataPass = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-pass');
+	} elsif($metadataProtocol eq $protocol && $metadataHost eq $host && $metadataUser eq $user) {
+		$metadataPass = $pass;
+	} else {
+		$metadataPass = ($metadataUser eq 'ftp')?'guest@':''  if($metadataProtocol eq 'ftp');
+		$LOG->logdie("Configuration file $iniFile must have 'metadata-pass'")  unless(defined($metadataPass));
+	}
+	
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'blueprint-metadata-rel')) {
+		$blueprintMetadataFTPRel = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'blueprint-metadata-rel');
+	} elsif($metadataProtocol eq $protocol && $metadataHost eq $host && $metadataUser eq $user) {
+		$blueprintMetadataFTPRel = $blueprintFTPRel;
+	} else {
+		$blueprintMetadataFTPRel = DEFAULT_FTP_REL;
+	}
+	
+	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-index-path')) {
+		$metadataIndexPath = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-index-path');
+	} elsif($metadataProtocol eq $protocol && $metadataHost eq $host && $metadataUser eq $user) {
+		$metadataIndexPath = $indexPath;
+	} else {
+		$LOG->logdie("Configuration file $iniFile must have 'metadata-index-path'");
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,'metadata-path')) {
@@ -781,29 +893,26 @@ if(scalar(@ARGV)>=2) {
 	# First, explicitly create the caching directory
 	$workingDir = BP::DCCLoader::WorkingDir->new($cachingDir);
 	
-	$LOG->info("Connecting to $host...");
+	$LOG->info("Connecting to host $protocol://$host...");
 	# Defined outside
-	$bpDataServer = undef;
-	if($protocol eq 'ftp') {
-		$bpDataServer = Net::FTP::AutoReconnect->new($host,Debug=>0) || $LOG->logdie("FTP connection to server $host failed: ".$@);
-		$bpDataServer->login($user,$pass) || $LOG->logdie("FTP login to server $host failed: ".$bpDataServer->message());
-		$bpDataServer->binary();
-		
-	} elsif($protocol eq 'sftp') {
-		$LOG->logdie("Unfinished protocol $protocol. Ask the developers to finish it");
-		
-		$bpDataServer = Net::SFTP::Foreign->new('host' => $host,'user' => $user,'password' => $pass,'fs_encoding' => 'utf8');
-		$bpDataServer->die_on_error("SSH connection to server $host failed");
+	$bpDataServer = doBPConnect($protocol,$host,$user,$pass);
+	
+	$bpMetadataServer = undef;
+	if($metadataProtocol eq $protocol && $metadataHost eq $host && $metadataUser eq $user && $metadataPass eq $pass) {
+		# Connection sharing
+		$bpMetadataServer = $bpDataServer;
 	} else {
-		$LOG->logdie("Unknown protocol $protocol");
+		$LOG->info("Connecting to metadata host $metadataProtocol://$metadataHost...");
+		$bpMetadataServer = doBPConnect($metadataProtocol,$metadataHost,$metadataUser,$metadataPass);
 	}
 	
-	my $localIndexPath = $workingDir->cachedGet($bpDataServer,$indexPath.'/'.$publicIndex);
-	my $localDataFilesIndexPath = $workingDir->cachedGet($bpDataServer,$indexPath.'/'.$dataIndex);
-	my $localExp2Datasets = $workingDir->cachedGet($bpDataServer,$indexPath.'/'.$exp2datasets);
+	my $localIndexPath = $workingDir->cachedGet($bpDataServer,join('/',$blueprintFTPRel , $indexPath , $publicIndex));
+	my $localDataFilesIndexPath = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $dataIndex));
+	my $localExp2Datasets = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $exp2datasets));
 	
 	if(defined($localIndexPath)) {
-		$LOG->warn("Unable to fetch experiments to datasets correspondence from $indexPath (host $host)")  unless(defined($localExp2Datasets));
+		$LOG->warn("Unable to fetch experiments to datasets correspondence from $blueprintMetadataFTPRel $metadataIndexPath (host $metadataHost)")  unless(defined($localExp2Datasets));
+		
 
 		# Try getting a connection to 
 		
@@ -870,6 +979,7 @@ if(scalar(@ARGV)>=2) {
 			'donors'	=>	\%donors,
 			'specimens'	=>	\%specimens,
 			'samples'	=>	\%samples,
+			'studies'	=>	\%studies,
 			'experiments'	=>	\%experiments,
 			'lab'	=>	\%lab,
 			'anal'	=>	\%anal,
@@ -882,7 +992,10 @@ if(scalar(@ARGV)>=2) {
 			'cellPurifiedTerm'	=>	\%cellPurifiedTerm,
 			'workingDir'	=>	$workingDir,
 			'bpDataServer'	=>	$bpDataServer,
-			'metadataPath'	=>	$metadataPath,
+			'bpMetadataServer'	=>	$bpMetadataServer,
+			'blueprintFTPRel'	=>	$blueprintFTPRel,
+			'blueprintMetadataFTPRel'	=>	$blueprintMetadataFTPRel,
+			'metadataPath'	=>	join('/',$blueprintMetadataFTPRel,$metadataPath),
 			'ensembl_version'	=>	$ensembl_version,
 			'gencode_version'	=>	$gencode_version,
 		};
@@ -902,22 +1015,27 @@ if(scalar(@ARGV)>=2) {
 		} else {
 			$LOG->logdie("Unable to parse $localIndexPath, the main metadata holder");
 		}
-
-		$LOG->info("Parsing $dataIndex...");
-		# Now, let's parse the data_files.index, the backbone
-		if(open(my $DFI,'<:encoding(UTF-8)',$localDataFilesIndexPath)) {
-			my %indexConfig = (
-				TabParser::TAG_HAS_HEADER	=> 1,
-				TabParser::TAG_CONTEXT	=> $publicIndexPayload,
-				TabParser::TAG_FETCH_COLS => PUBLIC_INDEX_COLS,
-				TabParser::TAG_POS_FILTER	=> [['FILE_TYPE' => 'BS_METH_TABLE_CYTOSINES_CNAG']],
-				TabParser::TAG_CALLBACK => \&data_files_callback,
-			);
-			$indexConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
-			TabParser::parseTab($DFI,%indexConfig);
-			close($DFI);
+		
+		if(defined($localDataFilesIndexPath)) {
+			$LOG->info("Parsing $dataIndex...");
+			# Now, let's parse the data_files.index, the backbone
+			if(open(my $DFI,'<:encoding(UTF-8)',$localDataFilesIndexPath)) {
+				my %indexConfig = (
+					TabParser::TAG_HAS_HEADER	=> 1,
+					TabParser::TAG_CONTEXT	=> $publicIndexPayload,
+					TabParser::TAG_FETCH_COLS => PUBLIC_INDEX_COLS,
+					TabParser::TAG_POS_FILTER	=> [['FILE_TYPE' => 'BS_METH_TABLE_CYTOSINES_CNAG']],
+					TabParser::TAG_CALLBACK => \&data_files_callback,
+				);
+				$indexConfig{TabParser::TAG_VERBOSE} = 1  if($testmode);
+				TabParser::parseTab($DFI,%indexConfig);
+				close($DFI);
+			} else {
+				$LOG->logdie("Unable to parse $localDataFilesIndexPath, the accessory metadata holder");
+			}
 		} else {
-			$LOG->logdie("Unable to parse $localDataFilesIndexPath, the accessory metadata holder");
+			$LOG->warn("Unable to fetch the accessory metadata holder from $blueprintMetadataFTPRel $metadataIndexPath $dataIndex (host $metadataHost)")  unless(defined($localExp2Datasets));
+
 		}
 
 		
@@ -1011,6 +1129,26 @@ if(scalar(@ARGV)>=2) {
 				my $labConceptDomain = $model->getConceptDomain('lab');
 				my $labFullname = $labConceptDomain->fullname;
 				
+				$LOG->info("Storing $labFullname");
+
+				if(scalar(keys(%studies))>0) {
+					my $studyConcept = 'study';
+					$LOG->info("\t* ".$labConceptDomain->conceptHash->{$studyConcept}->fullname."...");
+					$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{$studyConcept}));
+					
+					my @bulkArray = values(%studies);
+					my $entorp = $mapper->validateAndEnactEntry(\@bulkArray);
+					unless($testmode) {
+						my $destination = $mapper->getInternalDestination();
+						my $bulkData = $mapper->_bulkPrepare($entorp);
+						$mapper->_bulkInsert($destination,$bulkData);
+					} else {
+						$LOG->info("[TESTMODE] Skipping storage of studies");
+					}
+					
+					$mapper->freeDestination();
+				}
+
 				my @modelDomains = defined($modelDomain)?($DOMAIN2EXPANAL{$modelDomain}) : values(%DOMAIN2EXPANAL);
 				
 				foreach my $p_modelDomain (@modelDomains) {
@@ -1021,7 +1159,6 @@ if(scalar(@ARGV)>=2) {
 						my $bulkData = undef;
 						my $entorp = undef;
 
-						$LOG->info("Storing $labFullname");
 						$LOG->info("\t* ".$labConceptDomain->conceptHash->{$expDomain}->fullname."...");
 						$mapper->setDestination(BP::Loader::CorrelatableConcept->new($labConceptDomain->conceptHash->{$expDomain}));
 						$entorp = $mapper->validateAndEnactEntry($lab{$expDomain});
@@ -1030,7 +1167,7 @@ if(scalar(@ARGV)>=2) {
 							$bulkData = $mapper->_bulkPrepare($entorp);
 							$mapper->_bulkInsert($destination,$bulkData);
 						} else {
-							$LOG->info("\t[TESTMODE] Skipping storage of IHEC experiment data $labFullname");
+							$LOG->info("\t[TESTMODE] Skipping storage of IHEC experiment data ".$labConceptDomain->conceptHash->{$expDomain}->fullname);
 						}
 						
 						$destination = undef;
@@ -1077,7 +1214,7 @@ if(scalar(@ARGV)>=2) {
 											my $p_remote_files = (ref($remote_file) eq 'ARRAY')?$remote_file:[$remote_file];
 											
 											foreach my $r_file (@{$p_remote_files}) {
-												my $local_file = $workingDir->cachedGet($bpDataServer,$r_file);
+												my $local_file = $workingDir->cachedGet($bpDataServer,join('/',$blueprintFTPRel,$r_file));
 												
 												if(defined($local_file)) {
 													my $f_mode = undef;
@@ -1128,6 +1265,11 @@ if(scalar(@ARGV)>=2) {
 		}
 	} elsif(!defined($localIndexPath)) {
 		$LOG->logdie("FATAL ERROR: Unable to fetch index from $indexPath (host $host)");
+	}
+	
+	if($bpMetadataServer != $bpDataServer) {
+		$bpMetadataServer->disconnect()  if($bpMetadataServer->can('disconnect'));
+		$bpMetadataServer->quit()  if($bpMetadataServer->can('quit'));
 	}
 	
 	$bpDataServer->disconnect()  if($bpDataServer->can('disconnect'));

@@ -214,23 +214,23 @@ if(scalar(@ARGV)>=2) {
 	my $reactome_bundle_file = undef;
 	
 	# Check the needed parameters for the construction
-	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BASE_TAG)) {
-		$reactome_http_base = URI->new($ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BASE_TAG));
+	if($ini->exists(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,REACTOME_BASE_TAG)) {
+		$reactome_http_base = URI->new($ini->val(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,REACTOME_BASE_TAG));
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".REACTOME_BASE_TAG."'");
 	}
 	
 	unless($skipReactome) {
-		if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BUNDLE_TAG)) {
-			$reactome_bundle_file = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,REACTOME_BUNDLE_TAG);
+		if($ini->exists(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,REACTOME_BUNDLE_TAG)) {
+			$reactome_bundle_file = $ini->val(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,REACTOME_BUNDLE_TAG);
 		} else {
 			Carp::croak("Configuration file $iniFile must have '".REACTOME_BUNDLE_TAG."'");
 		}
 	}
 	
 	my $appris_http_base = undef;
-	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,APPRIS_BASE_TAG)) {
-		$appris_http_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,APPRIS_BASE_TAG);
+	if($ini->exists(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,APPRIS_BASE_TAG)) {
+		$appris_http_base = $ini->val(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,APPRIS_BASE_TAG);
 	} else {
 		Carp::croak("Configuration file $iniFile must have '".APPRIS_BASE_TAG."'");
 	}

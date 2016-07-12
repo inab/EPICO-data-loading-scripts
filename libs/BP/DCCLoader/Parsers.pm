@@ -8,6 +8,7 @@ use Carp;
 package BP::DCCLoader::Parsers;
 
 use constant DCC_LOADER_SECTION	=> 'dcc-loader';
+use constant EPICO_LOADER_SECTION	=> 'epico-loader';
 use constant ENSEMBL_FTP_BASE_TAG	=> 'ensembl-ftp-base-uri';
 
 # These constants define the elements of the arrays used as values for
