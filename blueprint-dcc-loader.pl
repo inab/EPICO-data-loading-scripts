@@ -114,6 +114,8 @@ use constant PUBLIC_INDEX_COLS => [
 	#'WITHDRAWN',	# Has been withdrawn this analysis?
 ];
 
+use constant NORMAL_DISEASE_URI	=>	'http://purl.obolibrary.org/obo/PATO_0000461';
+
 my %SEXCV = (
 	'male'	=>	'm',
 	'female'	=>	'f',
@@ -286,6 +288,18 @@ sub data_files_callback {
 	}
 }
 
+# Remember to put in lowercase the keys
+my %TISSUE_MAP = (
+	"peripheral blood"	=>	"http://purl.obolibrary.org/obo/UBERON_0013756",
+	"venous blood"		=>	"http://purl.obolibrary.org/obo/UBERON_0013756",
+	"cord blood"		=>	"http://purl.obolibrary.org/obo/UBERON_0012168",
+	"tonsil"		=>	"http://purl.obolibrary.org/obo/UBERON_0002372",
+	"bone marrow"		=>	"http://purl.obolibrary.org/obo/UBERON_0002371",
+	"thymus"		=>	"http://purl.obolibrary.org/obo/UBERON_0002370",
+	"thymus lymphoid tissue"		=>	"http://purl.obolibrary.org/obo/UBERON_0003483",
+	"liver"			=>	"http://purl.obolibrary.org/obo/UBERON_0002107",
+);
+
 sub public_results_callback {
 	my(
 		$payload,
@@ -389,7 +403,28 @@ sub public_results_callback {
 			$donor_min_age_at_specimen_acquisition = 'P0Y';
 		}
 		
-		my $donor_disease = ($donor_disease_text eq 'None')? 'http://purl.obolibrary.org/obo/PATO_0000461': undef;
+		# Tweaks
+		
+		# First pass
+		$donor_disease_uri =~ s/&amp;/&/g;
+		# Second pass
+		$donor_disease_uri =~ s/&amp;/&/g;
+		$donor_disease_uri =~ s/%2520/%20/g;
+		
+		if($donor_disease_uri eq '-' || $donor_disease_uri eq 'NA') {
+			$donor_disease_uri = NORMAL_DISEASE_URI;
+		} elsif(index($donor_disease_uri,'http')!=0) {
+			print STDERR "FIXME: $specimen_id $donor_disease_uri\n";
+			$donor_disease_uri = undef;
+		}
+		
+		unless(defined($donor_disease_uri)) {
+			if($donor_disease_text eq 'None') {
+				$donor_disease_uri = NORMAL_DISEASE_URI;
+			}
+			
+			print STDERR "TODO: empty donor disease: $specimen_id $donor_disease_text\n"  unless(defined($donor_disease_uri));
+		}
 		
 		my $specimen_term = undef;
 		
@@ -403,19 +438,8 @@ sub public_results_callback {
 		}
 		
 		unless(defined($specimen_term)) {
-			if ($tissue_type eq "Peripheral blood" || $tissue_type eq "Venous blood"){
-				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0013756";
-			} elsif($tissue_type eq "Cord blood"){
-				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0012168";
-			} elsif($tissue_type eq "Tonsil"){
-				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0002372";
-			} elsif($tissue_type eq "Bone marrow"){
-				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0002371";
-			} elsif($tissue_type eq "Thymus") {
-				# This is more specific, but as I'm unsure....
-				# $specimen_term = "http://purl.obolibrary.org/obo/UBERON_0003483";
-				$specimen_term = "http://purl.obolibrary.org/obo/UBERON_0002370";
-			}
+			my $lc_tissue_type = lc($tissue_type);
+			$specimen_term = $TISSUE_MAP{$lc_tissue_type}  if(exists($TISSUE_MAP{$lc_tissue_type}));
 		}
 		
 		# Last resort, look at the cache
@@ -437,7 +461,7 @@ sub public_results_callback {
 			'donor_min_age_at_specimen_acquisition'	=>	$donor_min_age_at_specimen_acquisition,
 			'donor_max_age_at_specimen_acquisition'	=>	$donor_max_age_at_specimen_acquisition,
 			'donor_health_status'	=>	$donor_health_status,
-			'donor_disease'	=>	$donor_disease,
+			'donor_disease'	=>	$donor_disease_uri,
 			'donor_disease_text'	=>	$donor_disease_text,
 			'specimen_processing'	=>	9,
 			'specimen_processing_other'	=>	$specimen_processing,
@@ -528,8 +552,10 @@ sub public_results_callback {
 				'platform'	=>	exists($INSTRUMENT2PLATFORM{$instrument_model})?$INSTRUMENT2PLATFORM{$instrument_model}:-1,
 				'platform_model'	=>	$ihec_instrument_model,
 				'seq_coverage'	=>	undef,
-				'extraction_protocol'	=>	exists($p_IHECexperiment->{EXTRACTION_PROTOCOL})?$p_IHECexperiment->{EXTRACTION_PROTOCOL}[0]:undef,
+				'extraction_protocol'	=>	exists($p_IHECexperiment->{EXTRACTION_PROTOCOL})?$p_IHECexperiment->{EXTRACTION_PROTOCOL}[0]:($payload->{testmode}?'':undef),
 			);
+			
+			$LOG->logwarn("FIXME: On experiment $experiment_id, missing extraction protocol")  unless(exists($p_IHECexperiment->{EXTRACTION_PROTOCOL}));
 			
 			# Last, register it!
 			$payload->{lab}{$labexp} = []  unless(exists($payload->{lab}{$labexp}));
@@ -1053,6 +1079,7 @@ if(scalar(@ARGV)>=2) {
 			'metadataPath'	=>	join('/',$blueprintMetadataFTPRel,$metadataPath),
 			'ensembl_version'	=>	$ensembl_version,
 			'gencode_version'	=>	$gencode_version,
+			'testmode'	=>	$testmode,
 		};
 		
 		$LOG->info("Parsing $publicIndex...");
