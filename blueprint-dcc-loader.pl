@@ -109,6 +109,8 @@ use constant PUBLIC_INDEX_COLS => [
 	# *_m
 	'FILE_TYPE',	# We decide the kind of analysis from this, and the postfix to build the analysis_id
 	'FILE',	# In some cases this one defines a variant in the analysis_id
+	'FILE_SIZE',	# The expected file size
+	'FILE_MD5',	# The expected MD5 sum
 	'NSC',	# NSC
 	'RSC',	# RSC
 	#'WITHDRAWN',	# Has been withdrawn this analysis?
@@ -144,7 +146,12 @@ my %DOMAIN2EXPANAL = (
 	'meth'	=>	['wgbs',['dlat']],
 );
 
+use constant {
+	UNSPECIFIED_PLATFORM	=>	-1,
+	UNSPECIFIED_PLATFORM_MODEL	=>	'unspecified',
+};
 my %INSTRUMENT2PLATFORM = (
+	UNSPECIFIED_PLATFORM_MODEL()	=>	UNSPECIFIED_PLATFORM,
 	'Illumina HiSeq 2000'	=>	60,
 	'NextSeq 500'	=>	100,
 );
@@ -220,6 +227,8 @@ sub data_files_callback {
 		
 		$file_type,
 		$remote_file_path,
+		$file_size,
+		$file_md5,
 		$NSC,
 		$RSC,
 	)=@_;
@@ -281,7 +290,12 @@ sub data_files_callback {
 				if(defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])) {
 					$payload->{primary_anal}{$analDomain} = []  unless(exists($payload->{primary_anal}{$analDomain}));
 					
-					push(@{$payload->{primary_anal}{$analDomain}},[$analysis_id,$ftype->[BP::DCCLoader::Parsers::F_PRIMARY],$ftype->[BP::DCCLoader::Parsers::F_PARSER],$remote_file_path]);
+					my $remote_file = {
+						'r_file'	=>	$remote_file_path,
+						'expectedSize'	=>	$file_size,
+						'expectedMD5'	=>	$file_md5
+					};
+					push(@{$payload->{primary_anal}{$analDomain}},[$analysis_id,$ftype->[BP::DCCLoader::Parsers::F_PRIMARY],$ftype->[BP::DCCLoader::Parsers::F_PARSER],$remote_file]);
 				}
 			}
 		}
@@ -340,6 +354,8 @@ sub public_results_callback {
 		
 		$file_type,
 		$remote_file_path,
+		$file_size,
+		$file_md5,
 		$NSC,
 		$RSC,
 	)=@_;
@@ -535,6 +551,14 @@ sub public_results_callback {
 			
 			my %features = map { my $val = { 'feature' => $_ , 'value' => $p_IHECexperiment->{$_}[0] }; $val->{'units'} = $p_IHECexperiment->{$_}[1]  if(defined($p_IHECexperiment->{$_}[1])); $_ => $val } keys(%{$p_IHECexperiment});
 			
+			# Curating instrument_model
+			$ihec_instrument_model = $instrument_model  if(!defined($ihec_instrument_model) && length($instrument_model) > 0);
+			unless(defined($ihec_instrument_model)) {
+				$ihec_instrument_model = UNSPECIFIED_PLATFORM_MODEL;
+				$LOG->logwarn("FIXME: On experiment $experiment_id, missing instrument model");
+			}
+			my $ihec_instrument = exists($INSTRUMENT2PLATFORM{$ihec_instrument_model})?$INSTRUMENT2PLATFORM{$ihec_instrument_model}:UNSPECIFIED_PLATFORM;
+			
 			# The common attributes
 			my %experiment = (
 				'experiment_id'	=>	$experiment_id,
@@ -549,7 +573,7 @@ sub public_results_callback {
 									'accession'	=>	exists($payload->{exp2EGA}{$experiment_id})?$payload->{exp2EGA}{$experiment_id}:'',
 									'url'	=>	exists($payload->{exp2EGA}{$experiment_id})?('https://www.ebi.ac.uk/ega/datasets/'.$payload->{exp2EGA}{$experiment_id}):'',
 								},
-				'platform'	=>	exists($INSTRUMENT2PLATFORM{$instrument_model})?$INSTRUMENT2PLATFORM{$instrument_model}:-1,
+				'platform'	=>	$ihec_instrument,
 				'platform_model'	=>	$ihec_instrument_model,
 				'seq_coverage'	=>	undef,
 				'extraction_protocol'	=>	exists($p_IHECexperiment->{EXTRACTION_PROTOCOL})?$p_IHECexperiment->{EXTRACTION_PROTOCOL}[0]:($payload->{testmode}?'':undef),
@@ -578,7 +602,7 @@ sub parseIHECsample($$$$) {
 	
 	$LOG->info("\t* Parsing IHEC sample $sample_id...");
 	
-	my $localIHECsample = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'));
+	my($localIHECsample, $reason) = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'));
 	
 	my %IHECsample = ();
 	if(defined($localIHECsample)) {
@@ -601,7 +625,7 @@ sub parseIHECsample($$$$) {
 		
 		$ihec->close();
 	} else {
-		$LOG->logwarn("Unable to fetch metadata file about sample $sample_id");
+		$LOG->logwarn("Unable to fetch metadata file about sample $sample_id . Reason: ".$reason);
 	}
 	
 	return \%IHECsample;
@@ -610,9 +634,9 @@ sub parseIHECsample($$$$) {
 sub parseIHECexperiment($$$$) {
 	my($bpDataServer,$metadataPath,$experiment_id,$workingDir) = @_;
 	
-	$LOG->info("\t* Parsing IHEC experiment $experiment_id...");
+	$LOG->info("\t\t* Parsing IHEC experiment $experiment_id...");
 	
-	my $localIHECexperiment = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'));
+	my($localIHECexperiment, $reason) = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'));
 	
 	my %IHECexperiment = ();
 	my $library_strategy = undef;
@@ -649,7 +673,7 @@ sub parseIHECexperiment($$$$) {
 		
 		$ihec->close();
 	} else {
-		$LOG->logwarn("Unable to fetch metadata file about experiment $experiment_id");
+		$LOG->logwarn("Unable to fetch metadata file about experiment $experiment_id . Reason: ".$reason);
 	}
 	
 	return (\%IHECexperiment,$library_strategy,$instrument_model);
@@ -946,8 +970,8 @@ if(scalar(@ARGV)>=2) {
 		$bpMetadataServer = doBPConnect($metadataProtocol,$metadataHost,$metadataUser,$metadataPass);
 	}
 	
-	my $localIndexPath = $workingDir->cachedGet($bpDataServer,join('/',$blueprintFTPRel , $indexPath , $publicIndex));
-	my $localDataFilesIndexPath = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $dataIndex));
+	my($localIndexPath, $indexPathReason) = $workingDir->cachedGet($bpDataServer,join('/',$blueprintFTPRel , $indexPath , $publicIndex));
+	my($localDataFilesIndexPath, $dataFilePathReason) = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $dataIndex));
 	
 	if(defined($localIndexPath)) {
 
@@ -1005,7 +1029,7 @@ if(scalar(@ARGV)>=2) {
 					if($dataSetPath =~ /(EGA[DS][0-9]*)_[^\/]+_analysis_files.tsv$/) {
 						my $dataset_id = $1;
 						
-						my $localDataSetFile = $workingDir->cachedGet($bpDataServer,$dataSetPath);
+						my($localDataSetFile, $dataSetFileReason) = $workingDir->cachedGet($bpDataServer,$dataSetPath);
 						if(defined($localDataSetFile)) {
 							$LOG->info("* Parsing $dataSetPath...");
 							
@@ -1023,10 +1047,10 @@ if(scalar(@ARGV)>=2) {
 								TabParser::parseTab($E2DF,%e2dfConfig);
 								close($E2DF);
 							} else {
-								$LOG->logwarn("Unable to parse $localDataSetFile, needed to get the correspondence to EGA dataset identifiers");
+								$LOG->warn("Unable to parse $localDataSetFile, needed to get the correspondence to EGA dataset identifiers. Reason: ".$!);
 							}
 						} else {
-							$LOG->warn("Unable to fetch experiments to datasets correspondence from $dataSetPath (host $host)");
+							$LOG->warn("Unable to fetch experiments to datasets correspondence from $dataSetPath (host $host). Reason: $dataSetFileReason");
 						}
 					}
 				}
@@ -1034,7 +1058,7 @@ if(scalar(@ARGV)>=2) {
 				$LOG->warn("$egaDataSetsPath unavailable. raw_data_accession subfields will be empty");
 			}
 		} else {
-			my $localExp2Datasets = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $exp2datasets));
+			my($localExp2Datasets, $exp2datasetsReason) = $workingDir->cachedGet($bpMetadataServer,join('/',$blueprintMetadataFTPRel , $metadataIndexPath , $exp2datasets));
 			
 			if(defined($localExp2Datasets)) {
 				$LOG->info("Parsing $exp2datasets...");
@@ -1048,10 +1072,10 @@ if(scalar(@ARGV)>=2) {
 					TabParser::parseTab($E2D,%e2dConfig);
 					close($E2D);
 				} else {
-					$LOG->logdie("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers");
+					$LOG->logdie("Unable to parse $localExp2Datasets, needed to get the EGA dataset identifiers. Reason: ".$!);
 				}
 			} else {
-				$LOG->warn("Unable to fetch experiments to datasets correspondence from $blueprintMetadataFTPRel $metadataIndexPath (host $metadataHost)");
+				$LOG->warn("Unable to fetch experiments to datasets correspondence from $blueprintMetadataFTPRel $metadataIndexPath (host $metadataHost). Reason: $exp2datasetsReason");
 				$LOG->warn("$exp2datasets unavailable. raw_data_accession subfields will be empty");
 			}
 		}
@@ -1116,7 +1140,7 @@ if(scalar(@ARGV)>=2) {
 				$LOG->logdie("Unable to parse $localDataFilesIndexPath, the accessory metadata holder");
 			}
 		} else {
-			$LOG->warn("Unable to fetch the accessory metadata holder from $blueprintMetadataFTPRel $metadataIndexPath $dataIndex (host $metadataHost)")  unless(defined($dataIndex));
+			$LOG->warn("Unable to fetch the accessory metadata holder from $blueprintMetadataFTPRel $metadataIndexPath $dataIndex (host $metadataHost). Reason: ".$dataFilePathReason)  unless(defined($dataIndex));
 
 		}
 
@@ -1288,15 +1312,19 @@ if(scalar(@ARGV)>=2) {
 									# And here the different bulk load
 									if(exists($primary_anal{$analDomain})) {
 										foreach my $p_primary (@{$primary_anal{$analDomain}}) {
-											my($analysis_id,$conceptName,$instance,$remote_file) = @{$p_primary};
-											$LOG->info("\t* ".$corrConcepts{$conceptName}->concept->fullname." ($remote_file)...");
+											my($analysis_id,$conceptName,$instance,$p_remote_files) = @{$p_primary};
+											
+											$p_remote_files = [ $p_remote_files ]  unless(ref($p_remote_files) eq 'ARRAY');
+											
+											my $conceptFullName = $corrConcepts{$conceptName}->concept->fullname;
 											
 											$mapper->setDestination($corrConcepts{$conceptName});
 											
-											my $p_remote_files = (ref($remote_file) eq 'ARRAY')?$remote_file:[$remote_file];
-											
-											foreach my $r_file (@{$p_remote_files}) {
-												my $local_file = $workingDir->cachedGet($bpDataServer,join('/',$blueprintFTPRel,$r_file));
+											foreach my $p_r_file (@{$p_remote_files}) {
+												my($remote_file_path,$expectedSize,$expectedMD5) = @{$p_r_file}{('r_file','expectedSize','expectedMD5')};
+												
+												$LOG->info("\t* ".$conceptFullName." ($remote_file_path)...");
+												my($local_file,$reason) = $workingDir->cachedGet($bpDataServer,join('/',$blueprintFTPRel,$remote_file_path),$expectedSize,$expectedMD5);
 												
 												if(defined($local_file)) {
 													my $f_mode = undef;
@@ -1318,20 +1346,20 @@ if(scalar(@ARGV)>=2) {
 															};
 															
 															if($@) {
-																$LOG->logwarn("Errors while processing $remote_file: ".$@);
+																$LOG->logwarn("Errors while processing $remote_file_path: ".$@);
 															}
 														} else {
-															$LOG->info("\t[TESTMODE] Skipping storage of ".$corrConcepts{$conceptName}->concept->fullname." ($local_file)");
+															$LOG->info("\t[TESTMODE] Skipping storage of $conceptFullName ($local_file)");
 														}
 														close($F);
 													} else {
-														$LOG->logwarn("File $local_file (fetched from $remote_file) not processed. Reason: ".$!);
+														$LOG->logwarn("File $local_file (fetched from $remote_file_path) not processed. Reason: ".$!);
 													}
 													
 													# At the end, free space of the huge downloaded file
 													unlink($local_file);
 												} else {
-													$LOG->logwarn("File $remote_file not processed (unable to fetch it). Reason: ".$bpDataServer->message);
+													$LOG->logwarn("File $remote_file_path not processed (unable to fetch it). Reason: ".$reason);
 												}
 											}
 											
@@ -1346,7 +1374,7 @@ if(scalar(@ARGV)>=2) {
 			}
 		}
 	} elsif(!defined($localIndexPath)) {
-		$LOG->logdie("FATAL ERROR: Unable to fetch index from $indexPath (host $host)");
+		$LOG->logdie("FATAL ERROR: Unable to fetch index from $indexPath (host $host). Reason: $indexPathReason");
 	}
 	
 	if($bpMetadataServer != $bpDataServer) {
