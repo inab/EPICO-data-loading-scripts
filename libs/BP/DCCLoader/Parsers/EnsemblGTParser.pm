@@ -450,7 +450,7 @@ sub getEnsemblCoordinates($$$;$) {
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG)) {
 		$ensembl_ftp_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG);
 	} else {
-		Carp::croak("Configuration file must have '".BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
+		$LOG->logdie("Configuration file must have '".BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
 	}
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
@@ -460,7 +460,7 @@ sub getEnsemblCoordinates($$$;$) {
 	};
 	
 	if($@) {
-		Carp::croak("$@ (does not exist in model)");
+		$LOG->logdie("$@ (does not exist in model)");
 	}
 	
 	# And translate these to URI objects
@@ -473,22 +473,46 @@ sub getEnsemblCoordinates($$$;$) {
 	$LOG->info("Connecting to $ensembl_ftp_base...");
 	
 	my $ensemblHost = $ensembl_ftp_base->host();
-	$ftpServer = Net::FTP::AutoReconnect->new($ensemblHost,Debug=>0) || Carp::croak("FTP connection to server ".$ensemblHost." failed: ".$@);
-	$ftpServer->login(BP::DCCLoader::WorkingDir::ANONYMOUS_USER,BP::DCCLoader::WorkingDir::ANONYMOUS_PASS) || Carp::croak("FTP login to server $ensemblHost failed: ".$ftpServer->message());
+	$ftpServer = Net::FTP::AutoReconnect->new($ensemblHost,Debug=>0) || $LOG->logdie("FTP connection to server ".$ensemblHost." failed: ".$@);
+	$ftpServer->login(BP::DCCLoader::WorkingDir::ANONYMOUS_USER,BP::DCCLoader::WorkingDir::ANONYMOUS_PASS) || $LOG->logdie("FTP login to server $ensemblHost failed: ".$ftpServer->message());
 	$ftpServer->binary();
 	
 	my $ensemblPath = $ensembl_ftp_base->path;
 	
-	my $localSQLFile = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.$ensembl_sql_file);
-	my $localSeqRegion = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_SEQ_REGION_FILE);
-	my $localGenes = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_GENE_FILE);
-	my $localTranscripts = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_TRANSCRIPT_FILE);
-	my $localExonTranscripts = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXON_TRANSCRIPT_FILE);
-	my $localExons = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXON_FILE);
-	my $localXref = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_XREF_FILE);
-	my $localExternalDB = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXTERNAL_DB_FILE);
+	my $localSQLFile;
+	my $localSeqRegion;
+	my $localGenes;
+	my $localTranscripts;
+	my $localExonTranscripts;
+	my $localExons;
+	my $localXref;
+	my $localExternalDB;
+	my $failureReason = undef;
 	
-	Carp::croak("FATAL ERROR: Unable to fetch files from $ensemblPath (host $ensemblHost)")  unless(defined($localSQLFile) && defined($localSeqRegion) && defined($localGenes) && defined($localTranscripts) && defined($localXref));
+	($localSQLFile, $failureReason) = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.$ensembl_sql_file);
+	if(defined($localSQLFile)) {
+		($localSeqRegion, $failureReason) = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_SEQ_REGION_FILE);
+		if(defined($localSeqRegion)) {
+			($localGenes, $failureReason) = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_GENE_FILE);
+			if(defined($localGenes)) {
+				($localTranscripts, $failureReason) = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_TRANSCRIPT_FILE);
+				if(defined($localTranscripts)) {
+					($localExonTranscripts, $failureReason) = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXON_TRANSCRIPT_FILE);
+					if(defined($localExonTranscripts)) {
+						($localExons, $failureReason) = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXON_FILE);
+						if(defined($localExons)) {
+							($localXref, $failureReason) = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_XREF_FILE);
+							if(defined($localXref)) {
+								($localExternalDB, $failureReason) = $workingDir->cachedGet($ftpServer,$ensemblPath.'/'.BP::DCCLoader::Parsers::EnsemblGTParser::ENSEMBL_EXTERNAL_DB_FILE);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	$LOG->logdie("FATAL ERROR: Unable to fetch files from $ensemblPath (host $ensemblHost). Reason: $failureReason")  unless(defined($localSQLFile) && defined($localSeqRegion) && defined($localGenes) && defined($localTranscripts) && defined($localXref));
 	
 	$ftpServer->disconnect()  if($ftpServer->can('disconnect'));
 	$ftpServer->quit()  if($ftpServer->can('quit'));

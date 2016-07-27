@@ -267,13 +267,13 @@ sub getGencodeCoordinates($$$;$$$) {
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG)) {
 		$gencode_ftp_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG);
 	} else {
-		Carp::croak("Configuration file must have '".GENCODE_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
+		$LOG->logdie("Configuration file must have '".GENCODE_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
 	}
 	
 	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG)) {
 		$gencode_gtf_file = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG);
 	} else {
-		Carp::croak("Configuration file must have '".GENCODE_GTF_FILE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
+		$LOG->logdie("Configuration file must have '".GENCODE_GTF_FILE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
 	}
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
@@ -282,7 +282,7 @@ sub getGencodeCoordinates($$$;$$$) {
 	};
 	
 	if($@) {
-		Carp::croak("$@ (does not exist in model)");
+		$LOG->logdie("$@ (does not exist in model)");
 	}
 	
 	# And translate these to URI objects
@@ -293,15 +293,15 @@ sub getGencodeCoordinates($$$;$$$) {
 	
 	$LOG->info("Connecting to $gencode_ftp_base...");
 	my $gencodeHost = $gencode_ftp_base->host();
-	$ftpServer = Net::FTP::AutoReconnect->new($gencodeHost,Debug=>0) || Carp::croak("FTP connection to server ".$gencodeHost." failed: ".$@);
-	$ftpServer->login(BP::DCCLoader::WorkingDir::ANONYMOUS_USER,BP::DCCLoader::WorkingDir::ANONYMOUS_PASS) || Carp::croak("FTP login to server $gencodeHost failed: ".$ftpServer->message());
+	$ftpServer = Net::FTP::AutoReconnect->new($gencodeHost,Debug=>0) || $LOG->logdie("FTP connection to server ".$gencodeHost." failed: ".$@);
+	$ftpServer->login(BP::DCCLoader::WorkingDir::ANONYMOUS_USER,BP::DCCLoader::WorkingDir::ANONYMOUS_PASS) || $LOG->logdie("FTP login to server $gencodeHost failed: ".$ftpServer->message());
 	$ftpServer->binary();
 	
 	my $gencodePath = $gencode_ftp_base->path();
 	
-	my $localGTF = $workingDir->cachedGet($ftpServer,$gencodePath.'/'.$gencode_gtf_file);
+	my($localGTF, $gencodePathReason) = $workingDir->cachedGet($ftpServer,$gencodePath.'/'.$gencode_gtf_file);
 	
-	Carp::croak("FATAL ERROR: Unable to fetch files from $gencodePath (host $gencodeHost)")  unless(defined($localGTF));
+	$LOG->logdie("FATAL ERROR: Unable to fetch files from $gencodePath (host $gencodeHost). Reason: ".$gencodePathReason)  unless(defined($localGTF));
 		
 	$ftpServer->disconnect()  if($ftpServer->can('disconnect'));
 	$ftpServer->quit()  if($ftpServer->can('quit'));
@@ -346,7 +346,7 @@ sub getGencodeCoordinates($$$;$$$) {
 			$batchProcessor->(\@onlyInEnsembl);
 		}
 	} else {
-		Carp::croak("ERROR: Unable to open EnsEMBL XREF file ".$localGTF);
+		$LOG->logdie("ERROR: Unable to open EnsEMBL XREF file ".$localGTF);
 	}
 	
 	return $p_ENShash;
