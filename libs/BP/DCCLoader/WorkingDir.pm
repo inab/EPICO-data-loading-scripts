@@ -126,6 +126,34 @@ sub new(;$) {
 	return $self;
 }
 
+# It creates a FTP or SFTP connection
+sub doBPConnect($$$$) {
+	my $self = shift;
+	
+	$self->{LOG}->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
+	
+	my($protocol,$host,$user,$pass) = @_;
+	
+	my $LOG = $self->{LOG};
+	
+	my $bpDataServer = undef;
+	
+	if($protocol eq 'ftp') {
+		$bpDataServer = Net::FTP::AutoReconnect->new($host,Debug=>0) || $LOG->logdie("FTP connection to server $host failed: ".$@);
+		$bpDataServer->login($user,$pass) || $LOG->logdie("FTP login to server $host failed: ".$bpDataServer->message());
+		$bpDataServer->binary();
+	} elsif($protocol eq 'sftp') {
+		$LOG->logdie("Unfinished protocol $protocol. Ask the developers to finish it");
+		
+		$bpDataServer = Net::SFTP::Foreign->new('host' => $host,'user' => $user,'password' => $pass,'fs_encoding' => 'utf8');
+		$bpDataServer->die_on_error("SSH connection to server $host failed");
+	} else {
+		$LOG->logdie("Unknown protocol $protocol");
+	}
+	
+	return $bpDataServer;
+}
+
 # cachedGet parameters:
 #	ftpServer: A Net::FTP or Net::FTP::AutoReconnect instance
 #	remotePath: The path to the resource to be fetched from the FTP server

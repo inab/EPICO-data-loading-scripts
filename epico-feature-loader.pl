@@ -16,7 +16,6 @@ use File::Basename;
 use File::Spec;
 use IO::Handle;
 use Log::Log4perl;
-use Net::FTP::AutoReconnect;
 use URI;
 
 use BP::Model;

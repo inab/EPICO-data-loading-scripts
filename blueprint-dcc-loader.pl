@@ -15,8 +15,6 @@ use File::Spec;
 # Give autoflush to STDOUT and STDERR
 use IO::Handle;
 use Log::Log4perl;
-use Net::FTP::AutoReconnect;
-#use Net::SFTP::Foreign 1.76;
 use Tie::IxHash;
 use XML::LibXML::Reader;
 
@@ -679,28 +677,6 @@ sub parseIHECexperiment($$$$) {
 	return (\%IHECexperiment,$library_strategy,$instrument_model);
 }
 
-# It creates a FTP or SFTP connection
-sub doBPConnect($$$$) {
-	my($protocol,$host,$user,$pass) = @_;
-	
-	my $bpDataServer = undef;
-	
-	if($protocol eq 'ftp') {
-		$bpDataServer = Net::FTP::AutoReconnect->new($host,Debug=>0) || $LOG->logdie("FTP connection to server $host failed: ".$@);
-		$bpDataServer->login($user,$pass) || $LOG->logdie("FTP login to server $host failed: ".$bpDataServer->message());
-		$bpDataServer->binary();
-	} elsif($protocol eq 'sftp') {
-		$LOG->logdie("Unfinished protocol $protocol. Ask the developers to finish it");
-		
-		$bpDataServer = Net::SFTP::Foreign->new('host' => $host,'user' => $user,'password' => $pass,'fs_encoding' => 'utf8');
-		$bpDataServer->die_on_error("SSH connection to server $host failed");
-	} else {
-		$LOG->logdie("Unknown protocol $protocol");
-	}
-	
-	return $bpDataServer;
-}
-
 my $testmode = undef;
 my $skipmode = undef;
 my $skipmodeText;
@@ -959,7 +935,7 @@ if(scalar(@ARGV)>=2) {
 	
 	$LOG->info("Connecting to host $protocol://$host...");
 	# Defined outside
-	$bpDataServer = doBPConnect($protocol,$host,$user,$pass);
+	$bpDataServer = $workingDir->doBPConnect($protocol,$host,$user,$pass);
 	
 	$bpMetadataServer = undef;
 	if($metadataProtocol eq $protocol && $metadataHost eq $host && $metadataUser eq $user && $metadataPass eq $pass) {
@@ -967,7 +943,7 @@ if(scalar(@ARGV)>=2) {
 		$bpMetadataServer = $bpDataServer;
 	} else {
 		$LOG->info("Connecting to metadata host $metadataProtocol://$metadataHost...");
-		$bpMetadataServer = doBPConnect($metadataProtocol,$metadataHost,$metadataUser,$metadataPass);
+		$bpMetadataServer = $workingDir->doBPConnect($metadataProtocol,$metadataHost,$metadataUser,$metadataPass);
 	}
 	
 	my($localIndexPath, $indexPathReason) = $workingDir->cachedGet($bpDataServer,join('/',$blueprintFTPRel , $indexPath , $publicIndex));
