@@ -111,14 +111,16 @@ sub getParsingFeatures() {
 	
 	return {
 		'BS_HYPER_METH_BED_CNAG'	=>	[
-			'dlat',
-			['11'],
-			'bs_hyper',
-			undef,
-			'mr',
-			$self,
-			METH_HYPER_METADATA,
-			BP::DCCLoader::Parsers::CpGInsertionParser::CNAG_CPGS_POSTFIX
+			[
+				'dlat',
+				['11'],
+				'bs_hyper',
+				undef,
+				'mr',
+				$self,
+				METH_HYPER_METADATA,
+				BP::DCCLoader::Parsers::CpGInsertionParser::CNAG_CPGS_POSTFIX
+			]
 		],
 	};
 	
@@ -180,14 +182,16 @@ sub getParsingFeatures() {
 	
 	return {
 		'BS_HYPO_METH_BED_CNAG'	=>	[
-			'dlat',
-			['11'],
-			'bs_hypo',
-			undef,
-			'mr',
-			$self,
-			METH_HYPO_METADATA,
-			BP::DCCLoader::Parsers::CpGInsertionParser::CNAG_CPGS_POSTFIX
+			[
+				'dlat',
+				['11'],
+				'bs_hypo',
+				undef,
+				'mr',
+				$self,
+				METH_HYPO_METADATA,
+				BP::DCCLoader::Parsers::CpGInsertionParser::CNAG_CPGS_POSTFIX
+			]
 		],
 	};
 	

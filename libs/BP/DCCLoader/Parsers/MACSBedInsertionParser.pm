@@ -91,11 +91,11 @@ sub getParsingFeatures() {
 
 	return {
 		# The two firsts are the old ones
-		'CS_BROAD_MACS2'	=>	$MACS_BROAD_BED,
-		'CS_MACS2'	=>	$MACS_BED,
+		'CS_BROAD_MACS2'	=>	[ $MACS_BROAD_BED ],
+		'CS_MACS2'	=>	[ $MACS_BED ],
 		
-		'CHIP_MACS2_BROAD_BED'	=>	$MACS_BROAD_BED,
-		'CHIP_MACS2_BED'	=>	$MACS_BED,
+		'CHIP_MACS2_BROAD_BED'	=>	[ $MACS_BROAD_BED ],
+		'CHIP_MACS2_BED'	=>	[ $MACS_BED ],
 	};
 	
 }

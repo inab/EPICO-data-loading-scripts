@@ -46,6 +46,7 @@ use constant UNK_METADATA => {
 };
 
 # It returns a hash reference with the parsing features to be inserted in %FILETYPE2ANAL
+# Each value from the keys of %FILETYPE2ANAL is an array of arrays
 sub getParsingFeatures() {
 	my($self)=shift;
 	

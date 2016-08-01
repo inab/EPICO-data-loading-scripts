@@ -62,11 +62,11 @@ sub getParsingFeatures() {
 	
 	return {
 		# The two firsts are the old ones
-		'CS_WIGGLER'	=>	$CHIP_WIGGLER,
-		'DS_WIGGLER'	=>	$DNASE_WIGGLER,
+		'CS_WIGGLER'	=>	[ $CHIP_WIGGLER ],
+		'DS_WIGGLER'	=>	[ $DNASE_WIGGLER ],
 		
-		'CHIP_WIGGLER'	=>	$CHIP_WIGGLER,
-		'DNASE_WIGGLER'	=>	$DNASE_WIGGLER,
+		'CHIP_WIGGLER'	=>	[ $CHIP_WIGGLER ],
+		'DNASE_WIGGLER'	=>	[ $DNASE_WIGGLER ],
 	};
 }
 

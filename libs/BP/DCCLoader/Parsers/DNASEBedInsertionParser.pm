@@ -80,9 +80,9 @@ sub getParsingFeatures() {
 	
 	return {
 		# The first is the old one
-		'DS_HOTSPOT'	=>	$DS_HOTSPOT_BED,
+		'DS_HOTSPOT'	=>	[ $DS_HOTSPOT_BED ],
 		
-		'DNASE_HOTSPOT_BED'	=>	$DS_HOTSPOT_BED,
+		'DNASE_HOTSPOT_BED'	=>	[ $DS_HOTSPOT_BED ],
 	};
 	
 }

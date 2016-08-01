@@ -45,14 +45,16 @@ sub getParsingFeatures() {
 	
 	return {
 		'BS_METH_TABLE_CYTOSINES_CNAG'	=>	[
-			'dlat',
-			['11'],
-			undef,
-			[['cpgs.bs_call' => +CNAG_CPGS_POSTFIX]],
-			'cpg',
-			undef,	# Disabling the insertion parser (at least, register the CpGs)
-			METH_CPG_METADATA,
-			undef	#CNAG_CYTOSINES_POSTFIX
+			[
+				'dlat',
+				['11'],
+				undef,
+				[['cpgs.bs_call' => +CNAG_CPGS_POSTFIX]],
+				'cpg',
+				undef,	# Disabling the insertion parser (at least, register the CpGs)
+				METH_CPG_METADATA,
+				undef	#CNAG_CYTOSINES_POSTFIX
+			]
 		],
 	};
 	

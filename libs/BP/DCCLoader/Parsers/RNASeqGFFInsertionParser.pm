@@ -73,58 +73,68 @@ sub getParsingFeatures() {
 	
 	return {
 		'RNA_GENE_QUANT_CBR'	=>	[
-			'exp',
-			['3b'],
-			undef,
-			[['.gff.gz' => 'gq_cbr']],
-			'g',
-			$self,
-			CBR_METADATA,
-			undef
+			[
+				'exp',
+				['3b'],
+				undef,
+				[['.gff.gz' => 'gq_cbr']],
+				'g',
+				$self,
+				CBR_METADATA,
+				undef
+			]
 		],
 		
 		'RNA_GENE_QUANT_CRG'	=>	[
-			'exp',
-			['15b'],
-			undef,
-			[['.gff' => 'gq_crg']],
-			'g',
-			$self,
-			CRG_METADATA,
-			undef
+			[
+				'exp',
+				['15b'],
+				undef,
+				[['.gff' => 'gq_crg']],
+				'g',
+				$self,
+				CRG_METADATA,
+				undef
+			]
 		],
 		
 		'RNA_TRANSCRIPT_QUANT_CBR'	=>	[
-			'exp',
-			['3b'],
-			undef,
-			[['.gff.gz' => 'tq_cbr']],
-			't',
-			$self,
-			CBR_METADATA,
-			undef
+			[
+				'exp',
+				['3b'],
+				undef,
+				[['.gff.gz' => 'tq_cbr']],
+				't',
+				$self,
+				CBR_METADATA,
+				undef
+			]
 		],
 		
 		'RNA_TRANSCRIPT_QUANT_CRG'	=>	[
-			'exp',
-			['15b'],
-			undef,
-			[['.gtf' => 'tq_crg']],
-			't',
-			$self,
-			CRG_METADATA,
-			undef
+			[
+				'exp',
+				['15b'],
+				undef,
+				[['.gtf' => 'tq_crg']],
+				't',
+				$self,
+				CRG_METADATA,
+				undef
+			]
 		],
 		
 		'RNA_JUNCTIONS_CRG'	=>	[
-			'jcn',
-			['15b'],
-			'junctions',
-			undef,
-			undef,
-			undef,
-			CRG_METADATA,
-			undef
+			[
+				'jcn',
+				['15b'],
+				'junctions',
+				undef,
+				undef,
+				undef,
+				CRG_METADATA,
+				undef
+			]
 		],
 	};
 	

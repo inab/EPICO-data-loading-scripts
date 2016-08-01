@@ -40,13 +40,18 @@ sub getParsableFiletypes(@) {
 	if(scalar(@PARSERS) > 0) {
 		foreach my $clazz (@PARSERS) {
 			my $instance = $clazz->new(@_);
-			my $p_parsable = $instance->getParsingFeatures();
 			
-			foreach my $newtype (keys(%{$p_parsable})) {
-				if(exists($FILETYPE2ANAL{$newtype})) {
-					Carp::carp("WARNING: Trying to register twice the filetype $newtype while loading $clazz. Ignoring...");
-				} else {
-					$FILETYPE2ANAL{$newtype} = $p_parsable->{$newtype};
+			if($instance->can('getParsingFeatures')) {
+				my $p_parsable = $instance->getParsingFeatures();
+				
+				foreach my $newtype (keys(%{$p_parsable})) {
+					if(exists($FILETYPE2ANAL{$newtype})) {
+						Carp::carp("WARNING: Registering more than once the filetype $newtype while loading $clazz");
+						
+						push(@{$FILETYPE2ANAL{$newtype}}, @{$p_parsable->{$newtype}});
+					} else {
+						$FILETYPE2ANAL{$newtype} = [ @{$p_parsable->{$newtype}} ];
+					}
 				}
 			}
 		}

@@ -228,65 +228,70 @@ sub data_files_callback {
 	if(exists($payload->{experiments}{$experiment_id})) {
 		# And this is the analysis metadata
 		if(exists($payload->{FILETYPE2ANAL}{$file_type})) {
-			my $ftype = $payload->{FILETYPE2ANAL}{$file_type};
-			my $analDomain = $ftype->[BP::DCCLoader::Parsers::F_DOMAIN];
+			my $ftypeArr = $payload->{FILETYPE2ANAL}{$file_type};
 			
-			# Analysis id building
-			my $an_postfix = undef;
-			
-			if(defined($ftype->[BP::DCCLoader::Parsers::F_PATTERN_POSTFIX])) {
-				foreach my $p_pat_post (@{$ftype->[BP::DCCLoader::Parsers::F_PATTERN_POSTFIX]}) {
-					my($pattern,$postfix)=@{$p_pat_post};
-					
-					if(index($remote_file_path,$pattern)!=-1) {
-						$an_postfix = $postfix;
-						last;
+			# Iterate over all the registered filetypes, until one matches
+			foreach my $ftype (@{$ftypeArr}) {
+				my $analDomain = $ftype->[BP::DCCLoader::Parsers::F_DOMAIN];
+				
+				# Analysis id building
+				my $an_postfix = undef;
+				
+				if(defined($ftype->[BP::DCCLoader::Parsers::F_PATTERN_POSTFIX])) {
+					foreach my $p_pat_post (@{$ftype->[BP::DCCLoader::Parsers::F_PATTERN_POSTFIX]}) {
+						my($pattern,$postfix)=@{$p_pat_post};
+						
+						if(index($remote_file_path,$pattern)!=-1) {
+							$an_postfix = $postfix;
+							last;
+						}
 					}
 				}
-			}
-			
-			$an_postfix = $ftype->[BP::DCCLoader::Parsers::F_POSTFIX]  unless(defined($an_postfix));
-			
-			# No postfix, no processing!!!!
-			if(defined($an_postfix)) {
-				my $analysis_id = $experiment_id.'_'.$an_postfix;
 				
-				unless(exists($payload->{reg_analysis}{$analysis_id})) {
-					my $f_metadata = $ftype->[BP::DCCLoader::Parsers::F_METADATA];
-					$f_metadata = {}  unless(defined($f_metadata));
+				$an_postfix = $ftype->[BP::DCCLoader::Parsers::F_POSTFIX]  unless(defined($an_postfix));
+				
+				# No postfix, skip! No processing!!!!
+				if(defined($an_postfix)) {
+					my $analysis_id = $experiment_id.'_'.$an_postfix;
 					
-					my %analysis = (
-						'analysis_id'	=>	$analysis_id,
-						'experiment_id'	=>	$experiment_id,
-						'analysis_group_id'	=>	$ftype->[BP::DCCLoader::Parsers::F_ANALYSIS_GROUP_ID],
-						'data_status'	=>	defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])?2:0,
-						'assembly_version'	=>	$f_metadata->{assembly_version},
-						'ensembl_version'	=>	$payload->{ensembl_version},
-						'gencode_version'	=>	$payload->{gencode_version},
-					);
-					$analysis{NSC} = $NSC  if($NSC ne '-');
-					$analysis{RSC} = $RSC  if($RSC ne '-');
-					@analysis{keys(%{$f_metadata})} = values(%{$f_metadata});
-					if(defined($ftype->[BP::DCCLoader::Parsers::F_PARENT_POSTFIX])) {
-						$analysis{'base_analysis_id'} = $analysis_id.'_'.$ftype->[BP::DCCLoader::Parsers::F_PARENT_POSTFIX];
+					unless(exists($payload->{reg_analysis}{$analysis_id})) {
+						my $f_metadata = $ftype->[BP::DCCLoader::Parsers::F_METADATA];
+						$f_metadata = {}  unless(defined($f_metadata));
+						
+						my %analysis = (
+							'analysis_id'	=>	$analysis_id,
+							'experiment_id'	=>	$experiment_id,
+							'analysis_group_id'	=>	$ftype->[BP::DCCLoader::Parsers::F_ANALYSIS_GROUP_ID],
+							'data_status'	=>	defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])?2:0,
+							'assembly_version'	=>	$f_metadata->{assembly_version},
+							'ensembl_version'	=>	$payload->{ensembl_version},
+							'gencode_version'	=>	$payload->{gencode_version},
+						);
+						$analysis{NSC} = $NSC  if($NSC ne '-');
+						$analysis{RSC} = $RSC  if($RSC ne '-');
+						@analysis{keys(%{$f_metadata})} = values(%{$f_metadata});
+						if(defined($ftype->[BP::DCCLoader::Parsers::F_PARENT_POSTFIX])) {
+							$analysis{'base_analysis_id'} = $analysis_id.'_'.$ftype->[BP::DCCLoader::Parsers::F_PARENT_POSTFIX];
+						}
+						
+						# Last, register it!
+						$payload->{anal}{$analDomain} = []  unless(exists($payload->{anal}{$analDomain}));
+						push(@{$payload->{anal}{$analDomain}},\%analysis);
+						$payload->{reg_analysis}{$analysis_id} = undef;
 					}
 					
-					# Last, register it!
-					$payload->{anal}{$analDomain} = []  unless(exists($payload->{anal}{$analDomain}));
-					push(@{$payload->{anal}{$analDomain}},\%analysis);
-					$payload->{reg_analysis}{$analysis_id} = undef;
-				}
-				
-				# Preparing the field
-				if(defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])) {
-					$payload->{primary_anal}{$analDomain} = []  unless(exists($payload->{primary_anal}{$analDomain}));
-					
-					my $remote_file = {
-						'r_file'	=>	$remote_file_path,
-						'expectedSize'	=>	$file_size,
-						'expectedMD5'	=>	$file_md5
-					};
-					push(@{$payload->{primary_anal}{$analDomain}},[$analysis_id,$ftype->[BP::DCCLoader::Parsers::F_PRIMARY],$ftype->[BP::DCCLoader::Parsers::F_PARSER],$remote_file]);
+					# Preparing the field
+					if(defined($ftype->[BP::DCCLoader::Parsers::F_PRIMARY])) {
+						$payload->{primary_anal}{$analDomain} = []  unless(exists($payload->{primary_anal}{$analDomain}));
+						
+						my $remote_file = {
+							'r_file'	=>	$remote_file_path,
+							'expectedSize'	=>	$file_size,
+							'expectedMD5'	=>	$file_md5
+						};
+						push(@{$payload->{primary_anal}{$analDomain}},[$analysis_id,$ftype->[BP::DCCLoader::Parsers::F_PRIMARY],$ftype->[BP::DCCLoader::Parsers::F_PARSER],$remote_file]);
+					}
+					last;
 				}
 			}
 		}

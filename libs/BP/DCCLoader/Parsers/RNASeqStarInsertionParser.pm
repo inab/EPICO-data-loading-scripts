@@ -19,7 +19,7 @@ use constant CRG_STAR_METADATA => {
 	],
 	'alignment_algorithm'	=>	{
 		'name'	=>	'GEMTools library',
-		'url'	=>	'http://github.com/gemtools',
+		'url'	=>	'https://github.com/gemtools/gemtools',
 	},
 	'other_analysis_algorithm'	=>	[
 		{
@@ -149,14 +149,16 @@ sub getParsingFeatures() {
 	
 	return {
 		'RNA_GENE_QUANT_STAR_CRG'	=>	[
-			'exp',
-			['15b'],
-			undef,
-			[['.results' => 'gq_crg']],
-			'g',
-			$self,
-			BP::DCCLoader::Parsers::RNASeqStarInsertionParser::CRG_STAR_METADATA,
-			undef
+			[
+				'exp',
+				['15b'],
+				undef,
+				[['.results' => 'gq_crg']],
+				'g',
+				$self,
+				BP::DCCLoader::Parsers::RNASeqStarInsertionParser::CRG_STAR_METADATA,
+				undef
+			]
 		],
 	};
 	
@@ -216,14 +218,16 @@ sub getParsingFeatures() {
 	
 	return {
 		'RNA_TRANSCRIPT_QUANT_STAR_CRG'	=>	[
-			'exp',
-			['15b'],
-			undef,
-			[['.results' => 'tq_crg']],
-			't',
-			$self,
-			BP::DCCLoader::Parsers::RNASeqStarInsertionParser::CRG_STAR_METADATA,
-			undef
+			[
+				'exp',
+				['15b'],
+				undef,
+				[['.results' => 'tq_crg']],
+				't',
+				$self,
+				BP::DCCLoader::Parsers::RNASeqStarInsertionParser::CRG_STAR_METADATA,
+				undef
+			]
 		],
 	};
 	
