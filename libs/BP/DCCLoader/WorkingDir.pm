@@ -126,6 +126,17 @@ sub new(;$) {
 	return $self;
 }
 
+# It returns a File::Temp instance of a temporary directory
+sub createTempDir() {
+	my $self = shift;
+	
+	$self->{LOG}->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
+	
+	my $tempDir = File::Temp->newdir('bpTempDirXXXXXX', 'DIR' => $self->{workingDir});
+	
+	return $tempDir;
+}
+
 # It creates a FTP or SFTP connection
 sub doBPConnect($$$$) {
 	my $self = shift;
