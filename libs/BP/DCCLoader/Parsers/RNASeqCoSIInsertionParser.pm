@@ -143,7 +143,10 @@ sub _prepareSplicingRatiosInternal($\%\%$) {
 	my $cosi;
 	
 	if(exists($p_attributes->{'cosi'})) {
-		$cosi = $p_attributes->{'cosi'} + 0e0  unless($p_attributes->{'cosi'} eq 'NA');
+		if($p_attributes->{'cosi'} ne 'NA') {
+			$p_attributes->{'cosi'} += 0e0;
+			$cosi = $p_attributes->{'cosi'};
+		}
 	} else {
 		my $cosi3 = ($p_attributes->{'cosi3'} ne 'NA') ? $p_attributes->{'cosi3'} + 0e0 : undef;
 		my $cosi5 = ($p_attributes->{'cosi5'} ne 'NA') ? $p_attributes->{'cosi5'} + 0e0 : undef;
@@ -173,7 +176,8 @@ sub _prepareSplicingRatiosInternal($\%\%$) {
 	foreach my $metric_key (keys(%{$p_attributes})) {
 		if($p_attributes->{$metric_key} eq 'NA') {
 			# Not a Number
-			$p_attributes->{$metric_key} = 'NaN' + 0;
+			#$p_attributes->{$metric_key} = 'NaN' + 0;
+			$p_attributes->{$metric_key} = undef;
 		} else {
 			$p_attributes->{$metric_key} += 0e0;
 		}
@@ -245,7 +249,7 @@ sub _prepareJunctionsInternal($\%\%$) {
 	$p_entry->{'total_reads'} = $p_attributes->{'count'} + 0;
 	$p_entry->{'stagg_reads'} = $p_attributes->{'stagg'} + 0;
 	$p_entry->{'entropy'} = $p_attributes->{'entr'} + 0e0;
-	$p_entry->{'annot_status'} = $p_attributes->{'annot'} + 0;
+	$p_entry->{'annot_status'} = $p_attributes->{'annot'} + 0e0;
 	$p_entry->{'splice_site_nucleotides'} = $p_attributes->{'nucl'};
 	$p_entry->{'score'} = ($score + 0e0)/ 100.0;
 	
