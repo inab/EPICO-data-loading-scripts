@@ -910,10 +910,12 @@ sub getModel() {
 		my $model = undef;
 		my $ensembl_version = undef;
 		my $gencode_version = undef;
+		my $grch_version = undef;
 		eval {
 			$model = BP::Model->new($modelFile);
 			$ensembl_version = exists($model->annotations->hash->{EnsemblVer})?$model->annotations->hash->{EnsemblVer}:'';
 			$gencode_version = exists($model->annotations->hash->{GENCODEVer})?$model->annotations->hash->{GENCODEVer}:'';
+			$grch_version = exists($model->annotations->hash->{GRChVer})?$model->annotations->hash->{GRChVer}:'';
 		};
 		
 		if($@) {
@@ -925,9 +927,49 @@ sub getModel() {
 		$self->{model} = $model;
 		$self->{ensembl_version} = $ensembl_version;
 		$self->{gencode_version} = $gencode_version;
+		$self->{grch_version} = $grch_version;
 	}
 	
 	return $self->{model};
+}
+
+sub getGRChVersion() {
+	my $self = shift;
+	
+	my $LOG = $self->{LOG};
+	
+	$LOG->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
+	
+	# Assuring that the model was fetched
+	$self->getModel();
+	
+	return $self->{grch_version};
+}
+
+sub getEnsemblVersion() {
+	my $self = shift;
+	
+	my $LOG = $self->{LOG};
+	
+	$LOG->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
+	
+	# Assuring that the model was fetched
+	$self->getModel();
+	
+	return $self->{ensembl_version};
+}
+
+sub getGencodeVersion() {
+	my $self = shift;
+	
+	my $LOG = $self->{LOG};
+	
+	$LOG->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
+	
+	# Assuring that the model was fetched
+	$self->getModel();
+	
+	return $self->{gencode_version};
 }
 
 sub getLoadAndStorageModels() {
@@ -961,6 +1003,10 @@ sub getLoadAndStorageModels() {
 	}
 	
 	return ($self->{p_loadModels},$self->{p_storageModels});
+}
+
+sub getIndexPath() {
+	return $_[0]->{'indexPath'};
 }
 
 sub getPublicIndexPayload($) {
@@ -1231,6 +1277,20 @@ sub dataServerGet($$$) {
 	my $publicIndexPayload = $self->getPublicIndexPayload();
 	
 	return $publicIndexPayload->{workingDir}->cachedGet($publicIndexPayload->{bpDataServer},join('/',$publicIndexPayload->{blueprintFTPRel},$remote_file_path),$expectedSize,$expectedMD5);
+}
+
+sub dataServerListing($) {
+	my $self = shift;
+	
+	my $LOG = $self->{LOG};
+	
+	$LOG->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
+	
+	my($remote_file_path) = @_;
+	
+	my $publicIndexPayload = $self->getPublicIndexPayload();
+	
+	return $publicIndexPayload->{workingDir}->listing($publicIndexPayload->{bpDataServer},join('/',$publicIndexPayload->{blueprintFTPRel},$remote_file_path));
 }
 
 sub disconnect() {

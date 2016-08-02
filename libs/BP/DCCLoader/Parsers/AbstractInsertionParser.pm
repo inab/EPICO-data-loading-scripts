@@ -107,8 +107,13 @@ sub insert($$$) {
 		};
 	}
 	
-	my $p_tabConfig = $self->_insertInternal($analysis_id,$p_insertMethod);
-	TabParser::parseTab($F,%{$p_tabConfig});
+	if(ref($F) eq 'ARRAY') {
+		# TODO
+		$self->_complexInsertInternal($analysis_id,$p_insertMethod,$F);
+	} else {
+		my $p_tabConfig = $self->_insertInternal($analysis_id,$p_insertMethod);
+		TabParser::parseTab($F,%{$p_tabConfig});
+	}
 	
 	# Last step
 	if($numBatch > 0) {
@@ -136,6 +141,19 @@ sub insert($$$) {
 # It returns a configuration hash usable with TabParser::parseTab
 #####
 sub _insertInternal($$) {
+	Carp::croak("Abstract method! You should implement it!");
+}
+
+#####
+# Complex parser method bodies
+# --------------
+# Each method must take these parameters
+#	analysis_id: The analysis_id for each entry
+#	p_insertMethod: We feed this method with the prepared entries
+#	p_files: The involved fileset
+# It does the job
+#####
+sub _complexInsertInternal($$\@) {
 	Carp::croak("Abstract method! You should implement it!");
 }
 
