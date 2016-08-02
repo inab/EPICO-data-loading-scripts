@@ -18,6 +18,7 @@ use BP::DCCLoader::Parsers::RNASeqCoSIInsertionParser;
 
 use BP::DCCLoader::Parsers::BlueprintDCCMetadataParser;
 use BP::DCCLoader::Parsers::NucleosomeDetectionParser;
+use BP::DCCLoader::Parsers::ChromatinSegmentationParser;
 
 # Logging facility initialization
 my $LOG;
@@ -29,7 +30,7 @@ BEGIN {
 # Constants and static memory structures
 
 my %SECDOMAIN2EXPANAL = (
-	'chromseg'	=>	['cs',['chromseg']],
+	BP::DCCLoader::Parsers::ChromatinSegmentationParser::ANALYSIS_CONCEPT_DOMAIN_NAME()	=>	[BP::DCCLoader::Parsers::ChromatinSegmentationParser::EXPERIMENT_CONCEPT_NAME(),[BP::DCCLoader::Parsers::ChromatinSegmentationParser::ANALYSIS_CONCEPT_DOMAIN_NAME()]],
 	BP::DCCLoader::Parsers::NucleosomeDetectionParser::ANALYSIS_CONCEPT_DOMAIN_NAME()	=>	['cs',[BP::DCCLoader::Parsers::NucleosomeDetectionParser::ANALYSIS_CONCEPT_DOMAIN_NAME()]],
 	'cosi'	=>	['mrna',['cosi']],
 );
@@ -112,7 +113,9 @@ if(scalar(@ARGV)>=2) {
 	}
 	
 	# * chromatin segmentation
-	
+	if(!defined($modelDomain) || $modelDomain eq BP::DCCLoader::Parsers::ChromatinSegmentationParser::ANALYSIS_CONCEPT_DOMAIN_NAME()) {
+		BP::DCCLoader::Parsers::ChromatinSegmentationParser::GetAnalysisMetadata($metadataParser,%{$p_anal},%{$p_primary_anal});
+	}
 	
 	# Iterating over the loadModels
 	foreach my $loadModelName (@{$p_loadModels}) {
@@ -184,87 +187,100 @@ if(scalar(@ARGV)>=2) {
 								foreach my $p_primary (@{$p_primary_anal->{$analDomain}}) {
 									my($analysis_id,$conceptName,$instance,$p_remote_files) = @{$p_primary};
 									
-									$p_remote_files = [ $p_remote_files ]  unless(ref($p_remote_files) eq 'ARRAY');
-									
 									my $conceptFullName = $corrConcepts{$conceptName}->concept->fullname;
+									
+									$LOG->info("\t* Analysis $analysis_id, ".$conceptFullName);
 									
 									$mapper->setDestination($corrConcepts{$conceptName});
 									
-									foreach my $p_r_files (@{$p_remote_files}) {
-										my $singleFile = ref($p_r_files) eq 'HASH';
-										$p_r_files = [ $p_r_files ]  if($singleFile);
+									my $singleFile = ref($p_remote_files) eq 'HASH';
+									$p_remote_files = [ $p_remote_files ]  if($singleFile);
+									
+									# Mirroring all of them
+									my @localFiles = ();
+									my @unlinkableFiles = ();
+									my $remote_file_path;
+									my $reason = undef;
+									
+									# Preparing several files for a single batch insertion
+									foreach my $p_r_file (@{$p_remote_files}) {
+										my $local_file;
 										
-										# Mirroring all of them
-										my @localFiles = ();
-										my $remote_file_path;
-										my $reason = undef;
-										foreach my $p_r_file (@{$p_r_files}) {
-											my $local_file;
-											
-											if(exists($p_r_file->{'r_file'})) {
-												my $expectedSize;
-												my $expectedMD5;
-												($remote_file_path,$expectedSize,$expectedMD5) = @{$p_r_file}{('r_file','expectedSize','expectedMD5')};
-												$LOG->info("\t* ".$conceptFullName." (analysis $analysis_id, $remote_file_path)...");
-												($local_file,$reason) = $metadataParser->dataServerGet($remote_file_path,$expectedSize,$expectedMD5);
-											} elsif(exists($p_r_file->{'l_file'})) {
-												$local_file = $p_r_file->{'l_file'};
-												$LOG->info("\t* ".$conceptFullName." (analysis $analysis_id, local $local_file)...");
-											} else {
-												$remote_file_path = '(unset)';
-												$reason = 'Design error';
-											}
-											
-											if(defined($local_file)) {
-												push(@localFiles,$local_file);
-												$reason = undef;
-											} else {
-												$LOG->logwarn("File $remote_file_path not processed (unable to fetch it). Reason: ".$reason);
-												last;
-											}
+										if(exists($p_r_file->{'r_file'})) {
+											# Remote resource
+											my $expectedSize;
+											my $expectedMD5;
+											($remote_file_path,$expectedSize,$expectedMD5) = @{$p_r_file}{('r_file','expectedSize','expectedMD5')};
+											$LOG->info("\t\t- Fetching remote $remote_file_path...");
+											($local_file,$reason) = $metadataParser->dataServerGet($remote_file_path,$expectedSize,$expectedMD5);
+										} elsif(exists($p_r_file->{'l_file'})) {
+											# Already fetched resource
+											$local_file = $p_r_file->{'l_file'};
+											$LOG->info("\t\t- Local $local_file...");
+										} else {
+											$remote_file_path = '(unset)';
+											$reason = 'Design error';
 										}
 										
-										unless(defined($reason)) {
-											my $F = undef;
+										if(defined($local_file)) {
+											push(@localFiles,$local_file);
+											# Recording what to remove
+											push(@unlinkableFiles,$local_file)  if(exists($p_r_file->{'r_file'}));
+											$reason = undef;
+										} else {
+											last;
+										}
+									}
+									
+									if(!defined($reason) && scalar(@localFiles) > 0) {
+										my $F = undef;
+										
+										if($singleFile) {
+											$singleFile = $localFiles[0];
+											my $f_mode = undef;
+											my @f_params = ();
 											
-											if($singleFile) {
-												$singleFile = $localFiles[0];
-												my $f_mode = undef;
-												my @f_params = ();
+											# Compressed file detection
+											if($singleFile =~ /\.gz$/) {
+												$f_mode = '-|';
+												push(@f_params,BP::Loader::Tools::GUNZIP,'-c',$singleFile);
+											} else {
+												$f_mode = '<';
+												push(@f_params,$singleFile);
+											}
+											unless(open($F,$f_mode,@f_params)) {
+												$LOG->logwarn("File $singleFile (fetched from $remote_file_path) not processed. Reason: ".$!);
+											}
+										} else {
+											$F = \@localFiles;
+										}
+										
+										if(defined($F)) {
+											unless($testmode && $testmode==1) {
+												eval {
+													$LOG->info("\t* Processing data for $analysis_id");
+													$instance->insert($F,$analysis_id,$mapper);
+												};
 												
-												# Compressed file detection
-												if($singleFile =~ /\.gz$/) {
-													$f_mode = '-|';
-													push(@f_params,BP::Loader::Tools::GUNZIP,'-c',$singleFile);
-												} else {
-													$f_mode = '<';
-													push(@f_params,$singleFile);
-												}
-												unless(open(my $F,$f_mode,@f_params)) {
-													$LOG->logwarn("File $singleFile (fetched from $remote_file_path) not processed. Reason: ".$!);
+												if($@) {
+													$LOG->logwarn("Errors while processing remote files for analysis $analysis_id: ".$@);
 												}
 											} else {
-												$F = \@localFiles;
+												$LOG->info("\t[TESTMODE] Skipping storage of $conceptFullName for analysis $analysis_id");
 											}
 											
-											if(defined($F)) {
-												unless($testmode && $testmode==1) {
-													eval {
-														$instance->insert($F,$analysis_id,$mapper);
-													};
-													
-													if($@) {
-														$LOG->logwarn("Errors while processing remote files for analysis $analysis_id: ".$@);
-													}
-												} else {
-													$LOG->info("\t[TESTMODE] Skipping storage of $conceptFullName for analysis $analysis_id");
-												}
-												close($F)  if(defined($singleFile));
-											}
-											
-											# At the end, free space of the huge downloaded file
-											unlink($singleFile)  if(defined($singleFile));
+											close($F)  if($singleFile);
+										#} else {
+										#	$LOG->error("What?!?!?!?");
 										}
+										
+										# At the end, free space of the huge downloaded file
+										foreach my $unlinkableFile (@unlinkableFiles) {
+											$LOG->info("\t\tRemoving $unlinkableFile");
+											unlink($unlinkableFile);
+										}
+									} elsif(defined($reason)) {
+										$LOG->logwarn("File $remote_file_path not processed (unable to fetch it). Reason: ".$reason);
 									}
 									
 									$mapper->freeDestination();
