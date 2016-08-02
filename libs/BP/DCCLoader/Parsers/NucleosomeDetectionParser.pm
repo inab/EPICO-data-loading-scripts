@@ -5,10 +5,6 @@ use strict;
 
 use Carp;
 
-use TabParser;
-
-use URI;
-
 package BP::DCCLoader::Parsers::NucleosomeDetectionParser;
 
 use base qw(BP::DCCLoader::Parsers::AbstractInsertionParser);
@@ -109,10 +105,12 @@ sub _complexInsertInternal($$\@) {
 			my $bLine = <$BED>;
 			
 			while($bLine = <$BED>) {
+				chomp($bLine);
+				my($chro,$chromosome_start,$chromosome_end,$nucleosome_id) = split(/\t/,$bLine);
+				
 				# Synchronous read
 				$tLine = <$TSV>;
 				chomp($tLine);
-				my($chro,$chromosome_start,$chromosome_end,$nucleosome_id) = split(/\t/,$bLine);
 				
 				if($termChro ne $chro) {
 					$termChro = $chro;
@@ -126,10 +124,12 @@ sub _complexInsertInternal($$\@) {
 				}
 				
 				if(defined($chromosome)) {
-					chomp($bLine);
-					my($t_nucleosome_id,undef,$position,$z_score,$total_reads,$noise,$p_value,$fuzziness,@readsByExp) = split(/\t/,$bLine);
+					my($t_nucleosome_id,undef,$position,$z_score,$total_reads,$noise,$p_value,$fuzziness,@readsByExp) = split(/\t/,$tLine);
 					
-					my @reads_by_experiment = map { {'experiment_id' => $_->[0], 'num_reads' => $readsByExp[$_->[1]], 'is_active' => $readsByExp[$_->[2]]} } @reads_cols;
+					#$LOG->error("JAJA ".$bLine);
+					#$LOG->error("JOJO ".join(",",@readsByExp));
+					
+					my @reads_by_experiment = map { {'experiment_id' => $_->[0], 'num_reads' => int($readsByExp[$_->[1]]), 'is_active' => (($readsByExp[$_->[2]] == '1')? boolean::true : boolean::false) } } @reads_cols;
 					
 					my %entry = (
 						'analysis_id'	=>	$analysis_id,
@@ -165,6 +165,17 @@ use constant {
 	NUCDET_PATH	=>	'secondary_analysis/Nucleosome_detection_and_histone_annotation',
 	NUCDET_MD5	=>	'md5s.txt',
 };
+
+sub __getShortPath($) {
+	my $path = shift;
+	
+	my $rpos = rindex($path,'/');
+	if($rpos!=-1) {
+		$path = substr($path,$rpos+1);
+	}
+	
+	return $path;
+}
 
 sub GetAnalysisMetadata($\%\%) {
 	my($metadataParser,$p_anal,$p_primary_anal) = @_;
@@ -211,7 +222,11 @@ sub GetAnalysisMetadata($\%\%) {
 					
 					close($MD5file);
 				}
+			} else {
+				$LOG->logdie("Error while fetching MD5 file $md5filePath . Reason: ".$reason);
 			}
+		} else {
+			$LOG->warn("No MD5 file found");
 		}
 		
 		my $instance = __PACKAGE__->new({
@@ -224,6 +239,12 @@ sub GetAnalysisMetadata($\%\%) {
 		my $ensembl_version = $metadataParser->getEnsemblVersion();
 		my $gencode_version = $metadataParser->getGencodeVersion();
 		
+		# Computing correspondence between sample name and sample id
+		my %sName2Id = ();
+		foreach my $p_sample (values(%{$publicIndexPayload->{samples}})) {
+			$sName2Id{$p_sample->{sample_name}} = $p_sample->{sample_id};
+		}
+		
 		# Once it is processed, let's consider only those which have both tsv and bed
 		foreach my $baseAnal (keys(%pairs)) {
 			my $p_baseAnal = $pairs{$baseAnal};
@@ -234,7 +255,8 @@ sub GetAnalysisMetadata($\%\%) {
 				my $bedFile;
 				foreach my $path (values(%{$p_baseAnal})) {
 					$LOG->info("\t* Fetching $path");
-					my($localFile,$reason) = $workingDir->cachedGet($bpDataServer,$path,undef,exists($MD5SUM{$path}) ? $MD5SUM{$path} : undef);
+					my $shortPath = __getShortPath($path);
+					my($localFile,$reason) = $workingDir->cachedGet($bpDataServer,$path,undef,exists($MD5SUM{$shortPath}) ? $MD5SUM{$shortPath} : undef);
 					
 					if(defined($localFile)) {
 						if($localFile =~ /\.tsv$/) {
@@ -269,7 +291,10 @@ sub GetAnalysisMetadata($\%\%) {
 							# Storing the experiment_id, the column for the reads and the column for the active state
 							push(@experiment_ids,$toks[1]);
 							unless(defined($sample_id)) {
-								$sample_id = $toks[0];
+								my $sample_name = $toks[0];
+								# Correspondence between sample name and id
+								$sample_id = $sName2Id{$sample_name};
+								
 								$analysis_id = $sample_id .'_nucleosome';
 							}
 						}
