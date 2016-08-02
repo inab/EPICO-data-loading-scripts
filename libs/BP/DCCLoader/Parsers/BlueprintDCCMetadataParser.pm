@@ -579,8 +579,9 @@ sub public_results_callback {
 			
 			# Last, register it!
 			$payload->{lab}{$labexp} = []  unless(exists($payload->{lab}{$labexp}));
-			push(@{$payload->{lab}{$labexp}},\%experiment);
-			$payload->{experiments}{$experiment_id} = undef;
+			my $p_exp = \%experiment;
+			push(@{$payload->{lab}{$labexp}},$p_exp);
+			$payload->{experiments}{$experiment_id} = $p_exp;
 		}
 		
 		&data_files_callback(@_);
