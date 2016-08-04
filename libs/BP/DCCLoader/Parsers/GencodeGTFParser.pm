@@ -264,16 +264,16 @@ sub getGencodeCoordinates($$$;$$$) {
 	my $gencode_gtf_file = undef;
 	
 	# Check the needed parameters for the construction
-	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG)) {
-		$gencode_ftp_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_FTP_BASE_TAG);
+	if($ini->exists(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,GENCODE_FTP_BASE_TAG)) {
+		$gencode_ftp_base = $ini->val(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,GENCODE_FTP_BASE_TAG);
 	} else {
-		$LOG->logdie("Configuration file must have '".GENCODE_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
+		$LOG->logdie("Configuration file must have '".GENCODE_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::EPICO_LOADER_SECTION."' section");
 	}
 	
-	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG)) {
-		$gencode_gtf_file = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,GENCODE_GTF_FILE_TAG);
+	if($ini->exists(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,GENCODE_GTF_FILE_TAG)) {
+		$gencode_gtf_file = $ini->val(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,GENCODE_GTF_FILE_TAG);
 	} else {
-		$LOG->logdie("Configuration file must have '".GENCODE_GTF_FILE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
+		$LOG->logdie("Configuration file must have '".GENCODE_GTF_FILE_TAG."' in '".BP::DCCLoader::Parsers::EPICO_LOADER_SECTION."' section");
 	}
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model

@@ -447,10 +447,10 @@ sub getEnsemblCoordinates($$$;$) {
 	my($model,$workingDir,$ini,$testmode) = @_;
 	
 	my $ensembl_ftp_base;
-	if($ini->exists(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG)) {
-		$ensembl_ftp_base = $ini->val(BP::DCCLoader::Parsers::DCC_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG);
+	if($ini->exists(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG)) {
+		$ensembl_ftp_base = $ini->val(BP::DCCLoader::Parsers::EPICO_LOADER_SECTION,BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG);
 	} else {
-		$LOG->logdie("Configuration file must have '".BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::DCC_LOADER_SECTION."' section");
+		$LOG->logdie("Configuration file must have '".BP::DCCLoader::Parsers::ENSEMBL_FTP_BASE_TAG."' in '".BP::DCCLoader::Parsers::EPICO_LOADER_SECTION."' section");
 	}
 	
 	# Now, let's patch the properies of the different remote resources, using the properties inside the model
