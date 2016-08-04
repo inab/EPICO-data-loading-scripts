@@ -62,7 +62,7 @@ sub __dlatBedParser($$$$) {
 					'total_reads'	=>	$total_reads,
 					'c_total_reads'	=>	($d_lated_reads + $converted_reads),
 					'd_lated_reads'	=>	$d_lated_reads,
-					'meth_level'	=>	$avg_meth_level+0e0,
+					'meth_level'	=>	$avg_meth_level+0.0,
 					
 				);
 				

@@ -118,7 +118,7 @@ sub _insertInternal($$) {
 				'chromosome'	=>	$chromosome,
 				'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
 				'chromosome_end'	=>	$chromosome_end+0,	# Bed holds the end coordinate as exclusive, so it does not change
-				'z_score'	=>	(defined($zscore_peak)?$zscore_peak:$zscore)+0e0,
+				'z_score'	=>	(defined($zscore_peak)?$zscore_peak:$zscore)+0.0,
 			);
 			
 			$p_insertMethod->(\%entry);

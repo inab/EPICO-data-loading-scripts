@@ -84,7 +84,7 @@ sub commonInsert($$\@\@\@;$) {
 			my %metrics = ();
 			
 			# Normalizing the content
-			@metrics{@{$p_colnames}[@{$p_metricsIndexes}]} = map { $_+0e0 } @_[@{$p_metricsIndexes}];
+			@metrics{@{$p_colnames}[@{$p_metricsIndexes}]} = map { $_+0.0 } @_[@{$p_metricsIndexes}];
 			
 			my %entry = (
 				'analysis_id'	=>	$analysis_id,
@@ -95,7 +95,7 @@ sub commonInsert($$\@\@\@;$) {
 			my @values = @_[@{$p_baseIndexes}];
 			foreach my $val (@values[1..$#values]) {
 				# Normalizing the content
-				$val += 0e0;
+				$val += 0.0;
 			}
 			
 			@entry{'gene_stable_id','length','effective_length','expected_count','TPM','FPKM'} = @values;

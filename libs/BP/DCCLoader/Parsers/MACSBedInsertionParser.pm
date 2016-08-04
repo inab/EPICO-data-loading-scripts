@@ -156,12 +156,12 @@ sub _insertInternal($$) {
 					'rank'	=>	[
 						{
 							'rank'	=>	'fold_enrichment',
-							'value'	=>	$fold_enrichment+0e0
+							'value'	=>	$fold_enrichment+0.0
 						}
 					],
 					'protein_stable_id'	=>	$protein_stable_id,
-					'log10_pvalue'	=>	$log10_pvalue+0e0,
-					'log10_qvalue'	=>	$log10_qvalue+0e0,
+					'log10_pvalue'	=>	$log10_pvalue+0.0,
+					'log10_qvalue'	=>	$log10_qvalue+0.0,
 				);
 				
 				$p_insertMethod->(\%entry);
