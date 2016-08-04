@@ -144,16 +144,16 @@ sub _prepareSplicingRatiosInternal($\%\%$) {
 	
 	if(exists($p_attributes->{'cosi'})) {
 		if($p_attributes->{'cosi'} ne 'NA') {
-			$p_attributes->{'cosi'} += 0e0;
+			$p_attributes->{'cosi'} += 0.0;
 			$cosi = $p_attributes->{'cosi'};
 		}
 	} else {
-		my $cosi3 = ($p_attributes->{'cosi3'} ne 'NA') ? $p_attributes->{'cosi3'} + 0e0 : undef;
-		my $cosi5 = ($p_attributes->{'cosi5'} ne 'NA') ? $p_attributes->{'cosi5'} + 0e0 : undef;
+		my $cosi3 = ($p_attributes->{'cosi3'} ne 'NA') ? $p_attributes->{'cosi3'} + 0.0 : undef;
+		my $cosi5 = ($p_attributes->{'cosi5'} ne 'NA') ? $p_attributes->{'cosi5'} + 0.0 : undef;
 		
 		my $doCalc = defined($cosi3) || defined($cosi5);
-		$cosi5 = 0e0  unless(defined($cosi5));
-		$cosi3 = 0e0  unless(defined($cosi3));
+		$cosi5 = 0.0  unless(defined($cosi5));
+		$cosi3 = 0.0  unless(defined($cosi3));
 		
 		$cosi = ($cosi3 + $cosi5) / 2.0  if($doCalc);
 	}
@@ -161,14 +161,14 @@ sub _prepareSplicingRatiosInternal($\%\%$) {
 	my $psi;
 	
 	if(exists($p_attributes->{'psi'})) {
-		$psi = $p_attributes->{'psi'} + 0e0  unless($p_attributes->{'psi'} eq 'NA');
+		$psi = $p_attributes->{'psi'} + 0.0  unless($p_attributes->{'psi'} eq 'NA');
 	} else {
-		my $psi3 = ($p_attributes->{'psi3'} ne 'NA') ? $p_attributes->{'psi3'} + 0e0 : undef;
-		my $psi5 = ($p_attributes->{'psi5'} ne 'NA') ? $p_attributes->{'psi5'} + 0e0 : undef;
+		my $psi3 = ($p_attributes->{'psi3'} ne 'NA') ? $p_attributes->{'psi3'} + 0.0 : undef;
+		my $psi5 = ($p_attributes->{'psi5'} ne 'NA') ? $p_attributes->{'psi5'} + 0.0 : undef;
 		
 		my $doCalc = defined($psi3) || defined($psi5);
-		$psi5 = 0e0  unless(defined($psi5));
-		$psi3 = 0e0  unless(defined($psi3));
+		$psi5 = 0.0  unless(defined($psi5));
+		$psi3 = 0.0  unless(defined($psi3));
 		
 		$psi = ($psi3 + $psi5) / 2.0  if($doCalc);
 	}
@@ -179,7 +179,7 @@ sub _prepareSplicingRatiosInternal($\%\%$) {
 			#$p_attributes->{$metric_key} = 'NaN' + 0;
 			$p_attributes->{$metric_key} = undef;
 		} else {
-			$p_attributes->{$metric_key} += 0e0;
+			$p_attributes->{$metric_key} += 0.0;
 		}
 	}
 	
@@ -245,13 +245,13 @@ sub getParsingFeatures() {
 sub _prepareJunctionsInternal($\%\%$) {
 	my($feature,$p_entry,$p_attributes,$score) = @_;
 	
-	$p_entry->{'idr'} = $p_attributes->{'IDR'} + 0e0;
-	$p_entry->{'total_reads'} = $p_attributes->{'count'} + 0;
+	$p_entry->{'idr'} = $p_attributes->{'IDR'} + 0.0;
+	$p_entry->{'total_supporting_reads'} = $p_attributes->{'count'} + 0;
 	$p_entry->{'stagg_reads'} = $p_attributes->{'stagg'} + 0;
-	$p_entry->{'entropy'} = $p_attributes->{'entr'} + 0e0;
-	$p_entry->{'annot_status'} = $p_attributes->{'annot'} + 0e0;
+	$p_entry->{'entropy'} = $p_attributes->{'entr'} + 0.0;
+	$p_entry->{'annot_status'} = $p_attributes->{'annot'} + 0.0;
 	$p_entry->{'splice_site_nucleotides'} = $p_attributes->{'nucl'};
-	$p_entry->{'score'} = ($score + 0e0)/ 100.0;
+	$p_entry->{'score'} = ($score + 0.0)/ 100.0;
 	
 	return $p_entry;
 }

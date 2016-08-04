@@ -138,11 +138,11 @@ sub _complexInsertInternal($$\@) {
 						'chromosome_start'	=>	$chromosome_start+1,	# Bed holds the data 0-based
 						'chromosome_end'	=>	$chromosome_end+0,	# Bed holds the end coordinate as exclusive, so it does not change
 						'position'	=>	$position+1,	# TSV holds the position 0-based
-						'z_score'	=>	$z_score + 0e0,
-						'total_reads'	=>	$total_reads + 0,
-						'noise'	=>	$noise + 0e0,
-						'p_value'	=>	$p_value + 0e0,
-						'fuzziness'	=>	$fuzziness + 0e0,
+						'z_score'	=>	$z_score + 0.0,
+						'total_supporting_reads'	=>	$total_reads + 0,
+						'noise'	=>	$noise + 0.0,
+						'p_value'	=>	$p_value + 0.0,
+						'fuzziness'	=>	$fuzziness + 0.0,
 						'reads_by_experiment'	=>	\@reads_by_experiment,
 					);
 					
