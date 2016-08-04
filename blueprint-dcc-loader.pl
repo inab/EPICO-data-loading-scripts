@@ -44,6 +44,7 @@ my %DOMAIN2EXPANAL = (
 
 my $testmode = undef;
 my $skipmode = undef;
+my $cachedBoost = undef;
 my $skipmodeText;
 my $testmodeText;
 
@@ -68,6 +69,9 @@ while($doCheck) {
 				$testmodeText = 'only validating metadata, and skipping parsing big data';
 			}
 			shift(@ARGV);
+		} elsif($ARGV[0] eq '-b') {
+			$cachedBoost = 1;
+			shift(@ARGV);
 		} else {
 			$doCheck = undef;
 		}
@@ -78,6 +82,7 @@ while($doCheck) {
 
 $LOG->info("* [SKIPMODE] Enabled skip mode, level $skipmode ($skipmodeText)")  if($skipmode);
 $LOG->info("* [TESTMODE] Enabled test mode, level $testmode ($testmodeText)")  if($testmode);
+$LOG->info("* [CACHEDBOOST] Enabled cached files boost")  if($cachedBoost);
 
 if(scalar(@ARGV)>=2) {
 	STDOUT->autoflush(1);
@@ -92,7 +97,7 @@ if(scalar(@ARGV)>=2) {
 
 	my $metadataParser = BP::DCCLoader::Parsers::BlueprintDCCMetadataParser->new($iniFile,$cachingDir);
 	
-	my $publicIndexPayload = $metadataParser->getPublicIndexPayload($testmode);
+	my $publicIndexPayload = $metadataParser->getPublicIndexPayload($testmode,$cachedBoost);
 	my($p_loadModels,$p_storageModels) = $metadataParser->getLoadAndStorageModels();
 	
 	# Common objects
@@ -340,5 +345,5 @@ if(scalar(@ARGV)>=2) {
 	$metadataParser->disconnect();
 	$LOG->info("Program has finished");
 } else {
-	print STDERR "Usage: $0 [-t|-tt] [-s|-ss] iniFile cachingDir [",join('|','sdata',sort(keys(%DOMAIN2EXPANAL))),"]\n"
+	print STDERR "Usage: $0 [-t|-tt] [-s|-ss] [-b] iniFile cachingDir [",join('|','sdata',sort(keys(%DOMAIN2EXPANAL))),"]\n"
 }

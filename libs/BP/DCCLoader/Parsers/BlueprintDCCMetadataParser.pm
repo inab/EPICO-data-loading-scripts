@@ -158,8 +158,8 @@ use constant {
 #####
 # Method prototypes
 #####
-sub parseIHECsample($$$$$);
-sub parseIHECexperiment($$$$$);
+sub parseIHECsample($$$$$$);
+sub parseIHECexperiment($$$$$$);
 
 #####
 # Method callbacks
@@ -463,7 +463,7 @@ sub public_results_callback {
 		
 		$payload->{LOG}->logdie("Undefined specimen term for $specimen_id!!!!")  unless(defined($specimen_term));
 		
-		$p_IHECsample = parseIHECsample($payload->{bpMetadataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir},$payload->{LOG});
+		$p_IHECsample = parseIHECsample($payload->{bpMetadataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir},$payload->{LOG},$payload->{cachedBoost});
 		my %specimen = (
 			'specimen_id'	=>	$specimen_id,
 			'tissue_type'	=>	$tissue_type,
@@ -489,7 +489,7 @@ sub public_results_callback {
 	}
 	
 	unless(exists($payload->{samples}{$sample_id})) {
-		$p_IHECsample = parseIHECsample($payload->{bpMetadataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir},$payload->{LOG})  unless(defined($p_IHECsample));
+		$p_IHECsample = parseIHECsample($payload->{bpMetadataServer},$payload->{metadataPath},$sample_id,$payload->{workingDir},$payload->{LOG},$payload->{cachedBoost})  unless(defined($p_IHECsample));
 		
 		my %sampleFeatures = map { $_ => { 'feature' => $_ , 'value' => $p_IHECsample->{$_} } } keys(%{$p_IHECsample});
 		
@@ -543,7 +543,7 @@ sub public_results_callback {
 		unless(exists($payload->{experiments}{$experiment_id})) {
 			my $labexp = $EXPERIMENTCV{$library_strategy};
 			
-			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($payload->{bpMetadataServer},$payload->{metadataPath},$experiment_id,$payload->{workingDir},$payload->{LOG});
+			my($p_IHECexperiment,$ihec_library_strategy,$ihec_instrument_model) = parseIHECexperiment($payload->{bpMetadataServer},$payload->{metadataPath},$experiment_id,$payload->{workingDir},$payload->{LOG},$payload->{cachedBoost});
 			
 			my %features = map { my $val = { 'feature' => $_ , 'value' => $p_IHECexperiment->{$_}[0] }; $val->{'units'} = $p_IHECexperiment->{$_}[1]  if(defined($p_IHECexperiment->{$_}[1])); $_ => $val } keys(%{$p_IHECexperiment});
 			
@@ -572,7 +572,7 @@ sub public_results_callback {
 				'platform'	=>	$ihec_instrument,
 				'platform_model'	=>	$ihec_instrument_model,
 				'seq_coverage'	=>	undef,
-				'extraction_protocol'	=>	exists($p_IHECexperiment->{EXTRACTION_PROTOCOL})?$p_IHECexperiment->{EXTRACTION_PROTOCOL}[0]:($payload->{testmode}?'':undef),
+				'extraction_protocol'	=>	exists($p_IHECexperiment->{EXTRACTION_PROTOCOL})?$p_IHECexperiment->{EXTRACTION_PROTOCOL}[0]:'',
 			);
 			
 			$payload->{LOG}->logwarn("FIXME: On experiment $experiment_id, missing extraction protocol")  unless(exists($p_IHECexperiment->{EXTRACTION_PROTOCOL}));
@@ -594,12 +594,12 @@ sub public_results_callback {
 #####
 # Method bodies
 #####
-sub parseIHECsample($$$$$) {
-	my($bpDataServer,$metadataPath,$sample_id,$workingDir,$LOG) = @_;
+sub parseIHECsample($$$$$$) {
+	my($bpDataServer,$metadataPath,$sample_id,$workingDir,$LOG,$cachedBoost) = @_;
 	
 	$LOG->info("\t* Parsing IHEC sample $sample_id...");
 	
-	my($localIHECsample, $reason) = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'));
+	my($localIHECsample, $reason) = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'samples',substr($sample_id,0,6),$sample_id.'.xml'),undef,undef,$cachedBoost);
 	
 	my %IHECsample = ();
 	if(defined($localIHECsample)) {
@@ -628,12 +628,12 @@ sub parseIHECsample($$$$$) {
 	return \%IHECsample;
 }
 
-sub parseIHECexperiment($$$$$) {
-	my($bpDataServer,$metadataPath,$experiment_id,$workingDir,$LOG) = @_;
+sub parseIHECexperiment($$$$$$) {
+	my($bpDataServer,$metadataPath,$experiment_id,$workingDir,$LOG,$cachedBoost) = @_;
 	
 	$LOG->info("\t\t* Parsing IHEC experiment $experiment_id...");
 	
-	my($localIHECexperiment, $reason) = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'));
+	my($localIHECexperiment, $reason) = $workingDir->cachedGet($bpDataServer,join('/',$metadataPath,'experiments',substr($experiment_id,0,6),$experiment_id.'.xml'),undef,undef,$cachedBoost);
 	
 	my %IHECexperiment = ();
 	my $library_strategy = undef;
@@ -1010,7 +1010,7 @@ sub getIndexPath() {
 	return $_[0]->{'indexPath'};
 }
 
-sub getPublicIndexPayload($) {
+sub getPublicIndexPayload(;$$) {
 	my $self = shift;
 	
 	my $LOG = $self->{LOG};
@@ -1018,7 +1018,7 @@ sub getPublicIndexPayload($) {
 	$LOG->logdie((caller(0))[3].' is an instance method!')  unless(ref($self));
 	
 	unless(exists($self->{p_publicIndexPayload})) {
-		my($testmode) = @_;
+		my($testmode,$cachedBoost) = @_;
 		
 		my $ini = $self->{ini};
 		# A BP::DCCLoader::WorkingDir instance
@@ -1140,7 +1140,7 @@ sub getPublicIndexPayload($) {
 						if($dataSetPath =~ /(EGA[DS][0-9]*)_[^\/]+_analysis_files.tsv$/) {
 							my $dataset_id = $1;
 							
-							my($localDataSetFile, $dataSetFileReason) = $workingDir->cachedGet($bpDataServer,$dataSetPath);
+							my($localDataSetFile, $dataSetFileReason) = $workingDir->cachedGet($bpDataServer,$dataSetPath,undef,undef,$cachedBoost);
 							if(defined($localDataSetFile)) {
 								$LOG->info("* Parsing $dataSetPath...");
 								
@@ -1216,6 +1216,7 @@ sub getPublicIndexPayload($) {
 				'gencode_version'	=>	$gencode_version,
 				'testmode'	=>	$testmode,
 				'LOG'	=>	$LOG,
+				'cachedBoost'	=>	$cachedBoost,
 			};
 			
 			$LOG->info("Parsing $publicIndex...");
