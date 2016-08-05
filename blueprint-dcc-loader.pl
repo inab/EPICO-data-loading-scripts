@@ -278,7 +278,11 @@ if(scalar(@ARGV)>=2) {
 								
 								# And here the different bulk load
 								if(exists($p_primary_anal->{$analDomain})) {
+									my $numAnal = scalar(@{$p_primary_anal->{$analDomain}});
+									my $iAnal = 0;
 									foreach my $p_primary (@{$p_primary_anal->{$analDomain}}) {
+										$iAnal++;
+										
 										my($analysis_id,$conceptName,$instance,$p_remote_files) = @{$p_primary};
 										
 										$p_remote_files = [ $p_remote_files ]  unless(ref($p_remote_files) eq 'ARRAY');
@@ -290,7 +294,7 @@ if(scalar(@ARGV)>=2) {
 										foreach my $p_r_file (@{$p_remote_files}) {
 											my($remote_file_path,$expectedSize,$expectedMD5) = @{$p_r_file}{('r_file','expectedSize','expectedMD5')};
 											
-											$LOG->info("\t* ".$conceptFullName." ($remote_file_path)...");
+											$LOG->info("\t* [$iAnal/$numAnal] ".$conceptFullName." ($remote_file_path)...");
 											my($local_file,$reason) = $metadataParser->dataServerGet($remote_file_path,$expectedSize,$expectedMD5);
 											
 											if(defined($local_file)) {

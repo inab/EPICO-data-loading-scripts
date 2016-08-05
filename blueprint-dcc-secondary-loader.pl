@@ -189,12 +189,16 @@ if(scalar(@ARGV)>=2) {
 							
 							# And here the different bulk load
 							if(exists($p_primary_anal->{$analDomain})) {
+								my $numAnal = scalar(@{$p_primary_anal->{$analDomain}});
+								my $iAnal = 0;
 								foreach my $p_primary (@{$p_primary_anal->{$analDomain}}) {
+									$iAnal++;
+									
 									my($analysis_id,$conceptName,$instance,$p_remote_files) = @{$p_primary};
 									
 									my $conceptFullName = $corrConcepts{$conceptName}->concept->fullname;
 									
-									$LOG->info("\t* Analysis $analysis_id, ".$conceptFullName);
+									$LOG->info("\t* [$iAnal/$numAnal] Analysis $analysis_id, ".$conceptFullName);
 									
 									$mapper->setDestination($corrConcepts{$conceptName});
 									
