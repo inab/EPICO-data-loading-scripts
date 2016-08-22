@@ -358,13 +358,13 @@ sub public_results_callback {
 	
 	my $donor_kind;
 	
-	if($donor_id eq '-') {
+	if($pool_id ne '-') {
+		$donor_id = $pool_id;
+		$donor_kind = 'p';
+	} elsif($donor_id eq '-') {
 		if($cell_line ne '-') {
 			$donor_id = $cell_line;
 			$donor_kind = 'c';
-		} elsif($pool_id ne '-') {
-			$donor_id = $pool_id;
-			$donor_kind = 'p';
 		} else {
 			$payload->{LOG}->logdie("Unable to identify the kind of donor");
 		}
