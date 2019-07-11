@@ -17,9 +17,19 @@ __END__
 
 =head1 NAME
 
-EPICO data loading scripts
+BP::DCCLoader - EPICO data loading scripts
 
-Then, you have to setup the project profile, either changing of copying L<epico-setup.ini|share/epico-setup.ini> file.
+=head1 SYNOPSIS
+
+  git clone -b 20190711 https://github.com/inab/EPICO-data-model.git model
+  carton exec epico-feature-loader.pl
+
+=head1 DESCRIPTION
+
+BP::DCCLoader scripts are the data loading scripts created for
+L<BLUEPRINT project|https://blueprint-epigenome.eu>.
+
+	Then, you have to setup the project profile, either changing of copying L<epico-setup.ini|share/epico-setup.ini> file.
 
 =over
 
@@ -65,6 +75,28 @@ Optional flag C<-skipReactome> is usually used in combination with C<-t> flag, i
 =back
 
 =back
+
+
+=head1 METHODS
+
+I<(to be documented)>
+
+=head1 AUTHOR
+
+José M. Fernández L<https://github.com/jmfernandez>
+
+=head1 COPYRIGHT
+
+The library and programs were initially created several years ago for the
+data management tasks in the
+L<BLUEPRINT project|http://www.blueprint-epigenome.eu/>.
+
+Copyright 2019- José M. Fernández & Barcelona Supercomputing Center (BSC)
+
+=head1 LICENSE
+
+These programs and libraries are free software; you can redistribute them
+and/or modify them under the Apache 2 terms.
 
 =head1 SEE ALSO
 
