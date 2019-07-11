@@ -2,14 +2,11 @@ EPICO-data-loading-scripts
 =============================
 
 In order to use both EPICO data loading scripts and BLUEPRINT ones you have to clone
-the repository:
+this repository:
 
-	git clone --recurse-submodules https://github.com/inab/EPICO-data-loading-scripts.git
-	
-and, in case you already have a copy, the update to the latest changes is with:
-
-	git pull --recurse-submodules
-	git submodule update --recursive
+```bash
+git clone https://github.com/inab/EPICO-data-loading-scripts.git
+```
 
 Then, you have to setup the project profile, either changing of copying [epico-setup.ini](epico-setup.ini) file.
 

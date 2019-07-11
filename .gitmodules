@@ -1,4 +1,0 @@
-[submodule "model"]
-	path = model
-	url = https://github.com/inab/EPICO-data-model.git
-	branch = master
