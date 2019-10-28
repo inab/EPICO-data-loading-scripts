@@ -41,7 +41,7 @@
       },
       "runtime" : {
          "requires" : {
-            "BP::Loader" : "v1.0.2",
+            "BP::Loader" : "v1.0.3",
             "BP::Model" : "v1.1.1",
             "Config::IniFiles" : "0",
             "Net::FTP::AutoReconnect" : "0",
@@ -63,7 +63,7 @@
          "web" : "https://github.com/inab/EPICO-data-loading-scripts"
       }
    },
-   "version" : "v1.0.0",
+   "version" : "v1.0.1",
    "x_contributors" : [
       "Jos\u00e9 Mar\u00eda Fern\u00e1ndez <jmfernandez@cnio.es>",
       "Jos\u00e9 Mar\u00eda Fern\u00e1ndez <jmfernandez@montblanc.cnio.es>",

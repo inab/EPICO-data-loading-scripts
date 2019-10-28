@@ -4,7 +4,7 @@ BP::DCCLoader - EPICO data loading scripts
 
 # SYNOPSIS
 
-    git clone -b 20190711 https://github.com/inab/EPICO-data-model.git model
+    git clone -b 20191028 https://github.com/inab/EPICO-data-model.git model
     carton exec epico-feature-loader.pl
 
 # DESCRIPTION

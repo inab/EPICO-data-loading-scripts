@@ -5,3 +5,6 @@ Revision history for EPICO-data-loading-scripts
 
 v1.0.0
 	- Initial release based on Dist::Milla.
+
+v1.0.1
+	- Updated BP-Schema-tools dependency.

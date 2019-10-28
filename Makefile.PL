@@ -28,7 +28,7 @@ my %WriteMakefileArgs = (
   "LICENSE" => "apache",
   "NAME" => "EPICO::data::loading::scripts",
   "PREREQ_PM" => {
-    "BP::Loader" => "1.0.2",
+    "BP::Loader" => "1.0.3",
     "BP::Model" => "1.1.1",
     "Config::IniFiles" => 0,
     "Net::FTP::AutoReconnect" => 0,
@@ -36,7 +36,7 @@ my %WriteMakefileArgs = (
     "Set::Scalar" => 0,
     "TabParser" => "0.01"
   },
-  "VERSION" => "v1.0.0",
+  "VERSION" => "v1.0.1",
   "test" => {
     "TESTS" => "t/*.t"
   }
@@ -44,7 +44,7 @@ my %WriteMakefileArgs = (
 
 
 my %FallbackPrereqs = (
-  "BP::Loader" => "1.0.2",
+  "BP::Loader" => "1.0.3",
   "BP::Model" => "1.1.1",
   "Config::IniFiles" => 0,
   "Net::FTP::AutoReconnect" => 0,

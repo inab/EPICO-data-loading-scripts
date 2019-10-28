@@ -8,7 +8,7 @@ package BP::DCCLoader;
 
 use version;
 
-our $VERSION = version->declare('v1.0.0');
+our $VERSION = version->declare('v1.0.1');
 
 1;
 __END__
@@ -21,7 +21,7 @@ BP::DCCLoader - EPICO data loading scripts
 
 =head1 SYNOPSIS
 
-  git clone -b 20190711 https://github.com/inab/EPICO-data-model.git model
+  git clone -b 20191028 https://github.com/inab/EPICO-data-model.git model
   carton exec epico-feature-loader.pl
 
 =head1 DESCRIPTION
