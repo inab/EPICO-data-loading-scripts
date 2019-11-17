@@ -4,8 +4,14 @@ BP::DCCLoader - EPICO data loading scripts
 
 # SYNOPSIS
 
-    git clone -b 20191028 https://github.com/inab/EPICO-data-model.git model
-    carton exec epico-feature-loader.pl
+```bash
+
+    git clone -b 20191117 https://github.com/inab/EPICO-data-model.git model
+    # Write a setup file pointing to the model, or copy the one available
+    # in the share directory of this module
+    epico-feature-loader.pl epico-setup.ini cachingDir
+
+```
 
 # DESCRIPTION
 
@@ -33,6 +39,17 @@ BP::DCCLoader scripts are the data loading scripts created for
 # METHODS
 
 _(to be documented)_
+
+# INSTALLATION
+
+Latest release of this package is available in the [BSC INB DarkPAN](https://gitlab.bsc.es/inb/darkpan/). You
+can install it just using `cpanm`:
+
+```bash
+
+    cpanm --mirror-only --mirror https://gitlab.bsc.es/inb/darkpan/raw/master/ --mirror https://cpan.metacpan.org/ BP::DCCLoader
+
+```
 
 # AUTHOR
 

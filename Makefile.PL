@@ -36,7 +36,10 @@ my %WriteMakefileArgs = (
     "Set::Scalar" => 0,
     "TabParser" => "0.01"
   },
-  "VERSION" => "v1.0.1",
+  "TEST_REQUIRES" => {
+    "Test::More" => "0.96"
+  },
+  "VERSION" => "v1.0.2",
   "test" => {
     "TESTS" => "t/*.t"
   }
@@ -50,7 +53,8 @@ my %FallbackPrereqs = (
   "Net::FTP::AutoReconnect" => 0,
   "SQL::Statement" => 0,
   "Set::Scalar" => 0,
-  "TabParser" => "0.01"
+  "TabParser" => "0.01",
+  "Test::More" => "0.96"
 );
 
 
