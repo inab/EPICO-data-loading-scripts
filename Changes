@@ -1,10 +1,14 @@
 Revision history for EPICO-data-loading-scripts
 
 {{$NEXT}}
+	- Added missing development dependencies.
+	- Updated install instructions, where it shows how to inject this
+	  modules dependency in different scenarios.
+	- Added needed setup to push releases into BSC INB DarkPAN.
 
+v1.0.1
+	- Updated BP-Schema-tools dependency.
 
 v1.0.0
 	- Initial release based on Dist::Milla.
 
-v1.0.1
-	- Updated BP-Schema-tools dependency.

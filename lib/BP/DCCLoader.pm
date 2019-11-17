@@ -21,8 +21,14 @@ BP::DCCLoader - EPICO data loading scripts
 
 =head1 SYNOPSIS
 
-  git clone -b 20191028 https://github.com/inab/EPICO-data-model.git model
-  carton exec epico-feature-loader.pl
+=for markdown ```bash
+
+  git clone -b 20191117 https://github.com/inab/EPICO-data-model.git model
+  # Write a setup file pointing to the model, or copy the one available
+  # in the share directory of this module
+  epico-feature-loader.pl epico-setup.ini cachingDir
+
+=for markdown ```
 
 =head1 DESCRIPTION
 
@@ -80,6 +86,17 @@ Optional flag C<-skipReactome> is usually used in combination with C<-t> flag, i
 =head1 METHODS
 
 I<(to be documented)>
+
+=head1 INSTALLATION
+
+Latest release of this package is available in the L<BSC INB DarkPAN|https://gitlab.bsc.es/inb/darkpan/>. You
+can install it just using C<cpanm>:
+
+=for markdown ```bash
+
+  cpanm --mirror-only --mirror https://gitlab.bsc.es/inb/darkpan/raw/master/ --mirror https://cpan.metacpan.org/ BP::DCCLoader
+
+=for markdown ```
 
 =head1 AUTHOR
 
